@@ -194,7 +194,7 @@
     const motionBtn = (v, label) => `<button type="button" data-motion="${v}" aria-pressed="${motionPref === v}">${label}</button>`;
     const cl = S.claude || {}, gh = S.github || {};
     $('#view-settings').innerHTML = `<div class="inner" style="max-width:820px">
-      <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.2</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
+      <div class="head m"><div><h1>Settings</h1><p>Andromeda ${esc(S.version || '')}</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
       <div class="panel m">
         <h2>Sky and motion</h2>
         <p>How the sky looks and how much it moves. Sky darkness works like light pollution: towards City the faint stars and the Milky Way fade. Reduced animations swap every pan and slide for a quiet crossfade.</p>
@@ -219,7 +219,7 @@
         <div class="row"><span class="pill">${esc(S.dataDir)}</span><div style="display:flex;gap:8px">${gh.connected ? '' : '<button type="button" class="btn" id="gh-connect">Connect GitHub</button>'}<button type="button" class="btn ghost" id="open-data">Open data folder</button></div></div>
       </div>
       <div class="panel m">
-        <h2>About</h2>
+        <h2>About <span class="ver">v${esc(S.version || '')}</span></h2>
         <p>The sky is drawn in code, with real constellations placed by hand. Shortcuts: Ctrl or Cmd + 1, 2, 3 to switch tabs, and Ctrl or Cmd + K for the prompt box.</p>
       </div></div>`;
     $$('[data-motion]').forEach((b) => b.addEventListener('click', () => {
@@ -299,6 +299,8 @@
     $$('.tabs [role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.view === id)));
     moveIndicator(!instant && !!prevId);
     setPlaceholder();
+    // Settings has nothing to ask Claude about, so the prompt box steps aside there.
+    $('.dock').toggleAttribute('data-off', id === 'settings');
     const next = $(`#view-${id}`);
     const plan = sky.plan(id);
     sky.goTo(id, { instant: !!prevId && instant });
@@ -783,7 +785,7 @@
   }
 
   // ---------- shortcuts and menus ----------
-  const focusPrompt = () => { openMenu(false); input.focus(); };
+  const focusPrompt = () => { openMenu(false); if (S.view === 'settings' && !S.course) show('courses'); input.focus(); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (!menu.hidden) openMenu(false); else if (S.course && document.activeElement !== input) closeCourse(); return; }
     const mod = e.metaKey || e.ctrlKey;

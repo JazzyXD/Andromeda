@@ -61,8 +61,9 @@ img, svg { -webkit-user-drag: none; }
   font-size: 14px; font-weight: 600; letter-spacing: 0.02em;
 }
 :root[data-platform="win32"] .brand:hover { background: rgba(233, 236, 245, 0.06); }
+/* Centred in the window itself, not between the brand and the window buttons (those differ in width). */
 .tabs {
-  position: relative; display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 4px; padding: 4px; border-radius: 999px;
   background: var(--glass); border: 1px solid rgba(233, 236, 245, 0.10);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
 }
@@ -79,7 +80,7 @@ img, svg { -webkit-user-drag: none; }
   box-shadow: inset 0 0 0 1px rgba(233, 236, 245, 0.14);
   transition: transform 0.55s var(--spring), width 0.55s var(--spring);
 }
-.sync { justify-self: end; display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 150px; font-size: 12.5px; color: var(--faint); }
+.sync { grid-column: 3; justify-self: end; display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 150px; font-size: 12.5px; color: var(--faint); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: #5FB3A1; box-shadow: 0 0 8px rgba(95, 179, 161, 0.7); }
 .dot.off { background: rgba(154, 165, 196, 0.5); box-shadow: none; }
 
@@ -174,6 +175,9 @@ img, svg { -webkit-user-drag: none; }
   pointer-events: none;
 }
 .dock > * { pointer-events: auto; }
+.dock { transition: opacity .3s ease, transform .4s cubic-bezier(.16,1.12,.3,1), visibility 0s linear 0s; }
+.dock[data-off] { opacity: 0; transform: translateY(24px); visibility: hidden; transition: opacity .2s ease, transform .3s ease, visibility 0s linear .3s; }
+.dock[data-off] > * { pointer-events: none; }
 .prompt {
   width: 100%; max-width: 760px; display: flex; align-items: flex-end; gap: 10px; padding: 10px;
   border-radius: 20px; background: rgba(233, 236, 245, 0.06); border: 1px solid rgba(233, 236, 245, 0.14);
@@ -404,3 +408,8 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 
 /* Fills stop at the inside of a border, so see-through borders never blend with the fill at the corners. */
 .card, .gcard, .panel, .prompt, .tabs, .convo, .glass, .changes, .confirm, .dates, .offer, .you, .chip-file, .ctx, .pill-btn, .mm-row button, .seg, .code, .setup-card { background-clip: padding-box; }
+
+/* version beside the About heading in Settings */
+.ver { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--faint); letter-spacing: 0.02em; }
+
+@media (prefers-reduced-motion: reduce) { .dock, .dock[data-off] { transition: none; } }

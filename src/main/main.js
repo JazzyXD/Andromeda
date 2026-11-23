@@ -249,7 +249,7 @@ const backup = () => { if (github && github.token) github.push().then((ok) => to
 const handlers = {
   'app:state': async () => ({
     courses: await store.listCourses(), inbox: await store.inbox(), usage,
-    github: github.state(), claude: await runner.status(), dataDir: store.dir,
+    github: github.state(), claude: await runner.status(), dataDir: store.dir, version: app.getVersion(),
   }),
   'claude:status': () => runner.status(),
   'claude:run': (_e, req) => {
