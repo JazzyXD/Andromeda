@@ -197,6 +197,11 @@ async function setupServices() {
   });
   github = new GitHub(app.getPath('userData'), store);
   await github.load();
+  // Connected before, but this data folder isn't linked yet (new folder, or a fresh start): link it.
+  if (github.token) {
+    const origin = await store.runGit(['remote', 'get-url', 'origin']);
+    if (!origin.ok) github.link().catch(() => {});
+  }
   store.on('changed', async () => toWin('data:changed', { courses: await store.listCourses(), inbox: await store.inbox() }));
 }
 
