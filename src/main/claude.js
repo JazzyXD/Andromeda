@@ -32,7 +32,8 @@ Rules:
 - Use several items per tool call where you can. Dates go to tools as YYYY-MM-DD and times as 24-hour HH:MM. When no year is given, use the next date that is still ahead.
 - If it's unclear which course they mean, ask one short question instead of guessing.
 - Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
-- Files under "Waiting to be filed" go into a course with attach_files once you know which course.`;
+- Files under "Waiting to be filed" go into a course with attach_files once you know which course.
+- Changing something that already exists (renaming a test, moving a date, relabelling a week) means editing that item by its [id ...] from the summary, never adding a new one.`;
 
 function parseUsage(info, prev) {
   const out = { ...(prev || {}) };

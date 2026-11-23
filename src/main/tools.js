@@ -55,7 +55,7 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, ...f }) => store.updateCourse(ref, f)));
 
     server.registerTool('set_upcoming', {
-      description: 'Add or update tests, quizzes and assignments under Coming up. Matched by id or title. Dates YYYY-MM-DD, times HH:MM (24h).',
+      description: 'Add or change tests, quizzes and assignments under Coming up. To change or rename an existing item, pass its id from the course summary; leave id out only for a brand-new item. Dates YYYY-MM-DD, times HH:MM (24h).',
       inputSchema: { course, items: z.array(z.object({ id: z.string().optional(), title: z.string().optional(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional(), done: z.boolean().optional() })) },
     }, wrap(({ course: ref, items }) => store.setUpcoming(ref, items)));
 
@@ -65,8 +65,8 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, items }) => store.removeUpcoming(ref, items)));
 
     server.registerTool('set_weeks', {
-      description: 'Add or update weeks or chapters (matched by label like "Week 3" or "Chapter 12"), optionally listing which course files belong to each.',
-      inputSchema: { course, weeks: z.array(z.object({ label: z.string(), title: z.string().optional(), files: z.array(z.string()).optional() })) },
+      description: 'Add or change weeks or chapters (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each. To change or relabel an existing week, pass its id from the course summary.',
+      inputSchema: { course, weeks: z.array(z.object({ id: z.string().optional(), label: z.string().optional(), title: z.string().optional(), files: z.array(z.string()).optional() })) },
     }, wrap(({ course: ref, weeks }) => store.setWeeks(ref, weeks)));
 
     server.registerTool('attach_files', {

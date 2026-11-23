@@ -176,15 +176,17 @@ class DataStore extends EventEmitter {
     for (const raw of items) {
       const title = clean(raw.title, 80);
       let it = (raw.id && c.upcoming.find((u) => u.id === raw.id)) || (title && c.upcoming.find((u) => u.title.toLowerCase() === title.toLowerCase()));
+      if (raw.id && !it) fail(`There's no Coming up item with id ${raw.id} in ${c.name}.`);
       const fresh = !it;
       if (fresh) { if (!title) fail('Each upcoming item needs a title.'); it = { id: uid(), title, date: '', time: '', covers: '', done: false }; c.upcoming.push(it); }
-      if (title) it.title = title;
       if (raw.date !== undefined) it.date = validDate(raw.date);
       if (raw.time !== undefined) it.time = validTime(raw.time);
       if (raw.covers !== undefined) it.covers = clean(raw.covers, 160);
       if (raw.done !== undefined) it.done = !!raw.done;
       const when = [prettyDate(it.date), it.time].filter(Boolean).join(' ');
-      changes.push({ course: c.name, courseId: c.id, where: 'Coming up', what: [it.title, when, it.covers].filter(Boolean).join(', ') + (fresh ? '' : ' (updated)') });
+      const was = !fresh && raw.id && title && it.title !== title ? it.title : '';
+      if (title) it.title = title;
+      changes.push({ course: c.name, courseId: c.id, where: 'Coming up', what: (was ? `${was} renamed to ` : '') + [it.title, when, it.covers].filter(Boolean).join(', ') + (fresh || was ? '' : ' (updated)') });
     }
     c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     await this.saveCourse(c);
@@ -207,10 +209,11 @@ class DataStore extends EventEmitter {
     const changes = [];
     for (const raw of weeks) {
       const label = clean(raw.label, 40);
-      if (!label) fail('Each week needs a label, like "Week 3" or "Chapter 12".');
-      let w = c.weeks.find((x) => x.label.toLowerCase() === label.toLowerCase());
+      let w = (raw.id && c.weeks.find((x) => x.id === raw.id)) || (label && c.weeks.find((x) => x.label.toLowerCase() === label.toLowerCase()));
+      if (raw.id && !w) fail(`There's no week with id ${raw.id} in ${c.name}.`);
       const fresh = !w;
-      if (fresh) { w = { id: uid(), label, title: '', files: [] }; c.weeks.push(w); }
+      if (fresh) { if (!label) fail('Each week needs a label, like "Week 3" or "Chapter 12".'); w = { id: uid(), label, title: '', files: [] }; c.weeks.push(w); }
+      if (label) w.label = label;
       if (raw.title !== undefined) w.title = clean(raw.title, 120);
       if (Array.isArray(raw.files)) {
         const known = c.files.map((f) => f.name);
@@ -301,8 +304,8 @@ class DataStore extends EventEmitter {
       const meta = [c.instructor && `Instructor: ${c.instructor}`, c.schedule && `Schedule: ${c.schedule}`, c.school && `School: ${c.school}`].filter(Boolean);
       if (meta.length) lines.push(meta.join(' | '));
       if (c.notes) lines.push(`Notes: ${c.notes}`);
-      if (c.upcoming.length) lines.push('Coming up: ' + c.upcoming.map((u) => `${u.title}${u.date ? ' ' + u.date : ''}${u.time ? ' ' + u.time : ''}${u.covers ? ' (' + u.covers + ')' : ''}${u.done ? ' [done]' : ''}`).join('; '));
-      if (c.weeks.length) lines.push('Weeks: ' + c.weeks.map((w) => `${w.label}${w.title ? ' ' + w.title : ''}${w.files.length ? ' [' + w.files.join(', ') + ']' : ''}`).join('; '));
+      if (c.upcoming.length) lines.push('Coming up: ' + c.upcoming.map((u) => `[id ${u.id}] ${u.title}${u.date ? ' ' + u.date : ''}${u.time ? ' ' + u.time : ''}${u.covers ? ' (' + u.covers + ')' : ''}${u.done ? ' [done]' : ''}`).join('; '));
+      if (c.weeks.length) lines.push('Weeks: ' + c.weeks.map((w) => `[id ${w.id}] ${w.label}${w.title ? ' ' + w.title : ''}${w.files.length ? ' [' + w.files.join(', ') + ']' : ''}`).join('; '));
       if (c.files.length) lines.push('Files: ' + c.files.map((f) => `${f.name}${f.text ? ' -> text at ' + f.text : ''}${f.note ? ' (' + f.note + ')' : ''}`).join('; '));
       return lines.join('\n');
     }).join('\n\n');
