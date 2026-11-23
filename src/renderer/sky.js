@@ -17,10 +17,16 @@
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
   // ---------- the sky's layout (world units = screen pixels at rest) ----------
-  const WORLD = { x0: -1500, y0: -900, x1: 6700, y1: 3900 };
+  // The sky wraps around left to right like the real one: x0 and x1 are the same place.
+  const WORLD = { x0: -1500, y0: -1600, x1: 6700, y1: 4600 };
+  const PERIOD = WORLD.x1 - WORLD.x0;
+  const wrapX = (x) => x - PERIOD * Math.floor((x - WORLD.x0) / PERIOD);
+  // The stars first painted between these heights; the strips above and below were added later.
+  const CORE_Y = [-900, 3900];
 
-  // Centre line of the Milky Way across the world (Catmull-Rom through these points).
-  const BAND = [[-1500, 2250], [-900, 1950], [-300, 1650], [300, 1380], [1300, 720], [2300, 1250], [3500, 1900], [4700, 2250], [6100, 2600], [6700, 2780]];
+  // Centre line of the Milky Way around the sky (Catmull-Rom through these points).
+  // The last point is the first one again, a full turn later, so the band joins up with itself.
+  const BAND = [[-1500, 2250], [-900, 1950], [-300, 1650], [300, 1380], [1300, 720], [2300, 1250], [3500, 1900], [4700, 2250], [6100, 2450], [6700, 2250]];
   const CORE = [260, 1400]; // where the band glows gold, like the galactic core
 
   // Constellations: points are [x, y, brightness]; edges join point indexes in tracing order.
@@ -87,9 +93,11 @@
   // Sample the band's centre line.
   function bandSamples(step) {
     const out = [];
-    const P = BAND;
-    for (let i = 0; i < P.length - 1; i++) {
-      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+    const n = BAND.length - 1;
+    // Control point i, carried round the sky as many turns as needed.
+    const at = (i) => { const k = ((i % n) + n) % n, turns = Math.floor(i / n); return [BAND[k][0] + turns * PERIOD, BAND[k][1]]; };
+    for (let i = 0; i < n; i++) {
+      const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
       const segLen = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
       const n = Math.max(2, Math.ceil(segLen / step));
       for (let k = 0; k < n; k++) {
@@ -104,22 +112,34 @@
   // ---------- build the sky once ----------
   function buildStars() {
     const r = rng(20261122);
-    const W = WORLD.x1 - WORLD.x0, H = WORLD.y1 - WORLD.y0;
+    const W = PERIOD, H = CORE_Y[1] - CORE_Y[0];
     const faint = [], bright = [];
     // Even field of faint stars.
     for (let i = 0; i < 4800; i++) {
-      faint.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.35 + r() * 0.6, a: 0.3 + r() * 0.5, c: r() < 0.15 ? 1 : r() < 0.25 ? 2 : 0 });
+      faint.push({ x: WORLD.x0 + r() * W, y: CORE_Y[0] + r() * H, r: 0.35 + r() * 0.6, a: 0.3 + r() * 0.5, c: r() < 0.15 ? 1 : r() < 0.25 ? 2 : 0 });
     }
     // Thick star clouds along the Milky Way.
     const line = bandSamples(12);
     for (let i = 0; i < 4200; i++) {
       const [bx, by] = line[Math.floor(r() * line.length)];
       const spread = 150 * (0.6 + r() * 0.8);
-      faint.push({ x: bx + gauss(r) * spread * 0.6, y: by + gauss(r) * spread, r: 0.3 + r() * 0.5, a: 0.25 + r() * 0.5, c: r() < 0.2 ? 1 : 0 });
+      faint.push({ x: wrapX(bx + gauss(r) * spread * 0.6), y: by + gauss(r) * spread, r: 0.3 + r() * 0.5, a: 0.25 + r() * 0.5, c: r() < 0.2 ? 1 : 0 });
     }
     // Scattered bright stars that twinkle.
     for (let i = 0; i < 300; i++) {
-      bright.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, seed: 1000 + i, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
+      bright.push({ x: WORLD.x0 + r() * W, y: CORE_Y[0] + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, seed: 1000 + i, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
+    }
+    // The same field carried on above and below, at the same density, for tall windows.
+    // (A second seed, so the stars above stay exactly where they were.)
+    const r2 = rng(20261123);
+    for (const [y0, y1] of [[WORLD.y0, CORE_Y[0]], [CORE_Y[1], WORLD.y1]]) {
+      const h = y1 - y0, k = h / H;
+      for (let i = 0; i < Math.round(4800 * k); i++) {
+        faint.push({ x: WORLD.x0 + r2() * W, y: y0 + r2() * h, r: 0.35 + r2() * 0.6, a: 0.3 + r2() * 0.5, c: r2() < 0.15 ? 1 : r2() < 0.25 ? 2 : 0 });
+      }
+      for (let i = 0; i < Math.round(300 * k); i++) {
+        bright.push({ x: WORLD.x0 + r2() * W, y: y0 + r2() * h, r: 0.9 + r2() * 0.9, a: 0.7 + r2() * 0.3, seed: 5000 + bright.length, c: r2() < 0.2 ? 1 : r2() < 0.3 ? 2 : 0 });
+      }
     }
     return { faint, bright };
   }
@@ -127,18 +147,24 @@
   // The Milky Way glow, painted small and soft, then scaled up when drawn.
   function buildBand() {
     const S = 0.2;
-    const W = Math.ceil((WORLD.x1 - WORLD.x0) * S), H = Math.ceil((WORLD.y1 - WORLD.y0) * S);
+    // One full turn of the sky is BW pixels wide. The raw painting gets a margin on both sides,
+    // filled with glow from the other end, so the blur has the right neighbours at the join.
+    const BW = Math.round(PERIOD * S), PAD = 40;
+    const W = BW + PAD * 2, H = Math.ceil((WORLD.y1 - WORLD.y0) * S);
     const raw = document.createElement('canvas'); raw.width = W; raw.height = H;
     const g = raw.getContext('2d');
     const r = rng(7);
-    const to = (x, y) => [(x - WORLD.x0) * S, (y - WORLD.y0) * S];
+    const to = (x, y) => [(x - WORLD.x0) * S + PAD, (y - WORLD.y0) * S];
     const blob = (x, y, rad, color, alpha) => {
-      const [cx, cy] = to(x, y), R = rad * S;
-      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R);
-      gr.addColorStop(0, `rgba(${color},${alpha})`);
-      gr.addColorStop(1, `rgba(${color},0)`);
-      g.fillStyle = gr;
-      g.fillRect(cx - R, cy - R, R * 2, R * 2);
+      const [x0, cy] = to(x, y), R = rad * S;
+      for (const cx of [x0 - BW, x0, x0 + BW]) {
+        if (cx + R < 0 || cx - R > W) continue;
+        const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+        gr.addColorStop(0, `rgba(${color},${alpha})`);
+        gr.addColorStop(1, `rgba(${color},0)`);
+        g.fillStyle = gr;
+        g.fillRect(cx - R, cy - R, R * 2, R * 2);
+      }
     };
     const line = bandSamples(26);
     g.globalCompositeOperation = 'lighter';
@@ -155,11 +181,16 @@
     for (const [x, y] of line) {
       if (r() < 0.55) blob(x + 18 + gauss(r) * 14, y + 26 + gauss(r) * 18, 34 + r() * 30, '10,8,16', 0.32);
     }
-    const soft = document.createElement('canvas'); soft.width = W; soft.height = H;
+    // The finished glow is one turn plus a second copy after it, so any window's worth of sky
+    // can be cut out in one piece, wherever the camera is.
+    const soft = document.createElement('canvas'); soft.width = BW * 2; soft.height = H;
     const s = soft.getContext('2d');
     s.filter = 'blur(5px)';
-    s.drawImage(raw, 0, 0);
-    return { canvas: soft, scale: S };
+    s.drawImage(raw, -PAD, 0);
+    s.filter = 'none';
+    s.clearRect(BW, 0, BW, H);
+    s.drawImage(soft, 0, 0, BW, H, BW, 0, BW, H);
+    return { canvas: soft, scale: S, turn: BW };
   }
 
   // ---------- the sky object ----------
@@ -188,6 +219,8 @@
       const fx = k.course ? 0.7 : W < 1100 ? 0.74 : 0.8, fy = k.course ? 0.7 : 0.3;
       return [c[0] - (fx - 0.5) * W, c[1] - (fy - 0.5) * H];
     }
+    // The same spot, a whole number of turns round so it's the nearest one: pans take the short way.
+    const nearest = (t) => [t[0] + PERIOD * Math.round((cam[0] - t[0]) / PERIOD), t[1]];
 
     function resize() {
       dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -208,7 +241,7 @@
       const ag = b.createLinearGradient(0, H, 0, H * 0.66);
       ag.addColorStop(0, 'rgba(47,127,134,0.12)'); ag.addColorStop(1, 'rgba(47,127,134,0)');
       b.fillStyle = ag; b.fillRect(0, H * 0.66, W, H * 0.34);
-      if (view && !pan) cam = camFor(view);
+      if (view && !pan) cam = nearest(camFor(view));
       dirty = true;
     }
 
@@ -251,8 +284,10 @@
         g.fillStyle = COLORS[c];
         for (const s of list) {
           if (s.c !== c) continue;
-          const x = s.x + ox, y = s.y + oy;
-          if (x < -4 || y < -4 || x > W + 4 || y > H + 4) continue;
+          let x = s.x + ox;
+          x -= PERIOD * Math.floor((x + 4) / PERIOD); // round the sky to the copy on screen
+          const y = s.y + oy;
+          if (y < -4 || x > W + 4 || y > H + 4) continue;
           let a = s.a, r = s.r;
           if (amt) {
             const v = scint(s.seed, t, y, 0.6 + 0.4 * s.r, amt);
@@ -268,7 +303,9 @@
     }
 
     function drawConstellation(c, camL, lineP, lineA, now, amt) {
-      const ox = W / 2 - camL[0] + mouse[0] * 14, oy = H / 2 - camL[1] + mouse[1] * 10;
+      let ox = W / 2 - camL[0] + mouse[0] * 14;
+      const oy = H / 2 - camL[1] + mouse[1] * 10;
+      ox -= PERIOD * Math.round((c.center[0] + ox - W / 2) / PERIOD); // the copy nearest the window
       const P = c.world.map(([x, y, m]) => [x + ox, y + oy, m]);
       // Lines, traced star to star.
       if (lineP > 0 && lineA > 0) {
@@ -361,8 +398,10 @@
         g.setTransform(dpr, 0, 0, dpr, 0, 0);
         const bx = W / 2 - cB[0] + mouse[0] * 5, by = H / 2 - cB[1] + mouse[1] * 4;
         g.globalAlpha = alpha;
-        const S = band.scale;
-        g.drawImage(band.canvas, (-bx - WORLD.x0) * S, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
+        const S = band.scale, T = band.turn;
+        let sx = ((-bx - WORLD.x0) * S) % T;
+        if (sx < 0) sx += T;
+        g.drawImage(band.canvas, sx, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
         g.globalAlpha = 1;
         drawStars(g, stars.faint, cF, 0.55, now, 0);
       }
@@ -382,7 +421,7 @@
 
     function goTo(id, { instant = false } = {}) {
       return new Promise((resolve) => {
-        const target = camFor(id);
+        const target = nearest(camFor(id));
         const prev = view;
         view = id;
         if (instant || !prev) {
@@ -411,7 +450,7 @@
 
     // Where the stars will slide, and for how long, if we go to this view now.
     function plan(id) {
-      const t = camFor(id), dx = cam[0] - t[0], dy = cam[1] - t[1], d = Math.hypot(dx, dy) || 1;
+      const t = nearest(camFor(id)), dx = cam[0] - t[0], dy = cam[1] - t[1], d = Math.hypot(dx, dy) || 1;
       return { dx: dx / d, dy: dy / d, dur: clamp(750 + d * 0.16, 850, 1300) };
     }
 
