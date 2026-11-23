@@ -9,6 +9,7 @@ const { ClaudeRunner } = require('./claude');
 const { GitHub } = require('./github');
 const { GuideStore, GuideBuilder, guessSubjects, SUBJECTS } = require('./guides');
 const { Sync, loadDevice } = require('./sync');
+const { Updater } = require('./updater');
 
 const isMac = process.platform === 'darwin';
 const isDev = !app.isPackaged || process.argv.includes('--dev');
@@ -216,7 +217,7 @@ ipcMain.on('menu:popup', (_e, pos) => {
 });
 
 // ---------- data, Claude and GitHub ----------
-let store, tools, runner, github, guides, builder, sync, device;
+let store, tools, runner, github, guides, builder, sync, device, updater;
 const usageFile = () => path.join(app.getPath('userData'), 'usage.json');
 let usage = {};
 const toWin = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
@@ -275,6 +276,11 @@ async function setupServices() {
   // when you come back to the window.
   sync.soon().then(() => builder.pickUp()).catch(() => {});
   setInterval(() => sync.now().catch(() => {}), 2 * 60e3);
+  // Updates (installed app only): a look 30 seconds after opening, then every 6 hours.
+  updater = new Updater({ github, app });
+  updater.on('available', (st) => toWin('update', st));
+  setTimeout(() => updater.check(), 30e3);
+  setInterval(() => updater.check(), 6 * 3600e3);
   let lastFocus = 0;
   app.on('browser-window-focus', () => { if (Date.now() - lastFocus > 20e3) { lastFocus = Date.now(); sync.now().catch(() => {}); } });
 }
@@ -294,6 +300,7 @@ async function linkAndSync() {
   const st = await store.exclusive(() => github.link());
   await sync.now();
   builder.pickUp().catch(() => {});
+  updater.check();
   return st;
 }
 
@@ -301,7 +308,7 @@ const handlers = {
   'app:state': async () => ({
     courses: await store.listCourses(), inbox: await store.inbox(), usage,
     github: github.state(), claude: await runner.status(), dataDir: store.dir, version: app.getVersion(),
-    device: { id: device.id, name: device.name }, sync: sync.state,
+    device: { id: device.id, name: device.name }, sync: sync.state, update: updater.state(),
     guides: await guides.list(), subjects: Object.fromEntries(Object.entries(SUBJECTS).map(([k, v]) => [k, v.name])),
   }),
   'claude:status': () => runner.status(),
@@ -452,6 +459,12 @@ const handlers = {
   'github:wait': async () => { await github.wait(); await linkAndSync().catch(() => {}); return github.state(); },
   'github:cancel': () => github.cancel(),
   'github:retryLink': () => linkAndSync(),
+  // Download the new version and hand over to its installer, then close so it can replace this one.
+  'update:install': async () => {
+    const r = await updater.install((p) => toWin('update:progress', p));
+    setTimeout(() => app.quit(), r.platform === 'win32' ? 800 : 2500);
+    return r;
+  },
   'sync:now': async () => { await sync.now(); return sync.state; },
   'device:rename': (_e, name) => device.rename(name),
   'guides:get': (_e, id) => guides.get(id),

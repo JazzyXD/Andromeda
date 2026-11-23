@@ -22,7 +22,10 @@
       <button type="button" role="tab" data-view="guides" aria-selected="false">Guides</button>
       <button type="button" role="tab" data-view="settings" aria-selected="false">Settings</button>
     </nav>
-    <button type="button" class="sync" id="sync" title="Sync now"><span class="dot off"></span><span id="sync-text">Saved on this laptop</span></button>
+    <div class="bar-end">
+      <button type="button" class="upd" id="upd" hidden><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 7.1L21 12l-7.1 1.9L12 22l-1.9-8.1L3 12l7.1-2.9z" fill="currentColor"/></svg><span id="upd-text">Update ready</span></button>
+      <button type="button" class="sync" id="sync" title="Sync now"><span class="dot off"></span><span id="sync-text">Saved on this laptop</span></button>
+    </div>
   </header>
 
   <main class="stage" id="stage">

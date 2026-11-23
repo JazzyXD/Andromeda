@@ -686,6 +686,7 @@
       <div class="panel m">
         <h2>About <span class="ver">v${esc(S.version || '')}</span></h2>
         <p>The sky is drawn in code, with real constellations placed by hand. Shortcuts: Ctrl or Cmd + 1, 2, 3 to switch tabs, and Ctrl or Cmd + K for the prompt box.</p>
+        <div id="upd-box"></div>
       </div></div>`;
     $$('[data-motion]').forEach((b) => b.addEventListener('click', () => {
       motionPref = b.dataset.motion; local.set('motion', motionPref);
@@ -714,10 +715,39 @@
     dn.addEventListener('change', saveName);
     dn.addEventListener('keydown', (e) => { if (e.key === 'Enter') dn.blur(); });
     renderSync();
+    renderUpdate();
     renderZoom();
     const ghb = $('#gh-connect');
     if (ghb) ghb.addEventListener('click', () => showSetup(true));
   }
+
+  // ---------- updates (installed app only) ----------
+  // A gold "Update to 0.5.1" in the header when a new version is out; Settings > About installs it.
+  let updStep = null; // null, a number 0 to 1 while downloading, or 'done'
+  function renderUpdate() {
+    const u = (S.update && S.update.available) || null, pill = $('#upd');
+    pill.hidden = !u;
+    if (u) { $('#upd-text').textContent = `Update to ${u.version}`; pill.title = `Andromeda ${u.version} is ready. Click to see what's new and install it.`; }
+    const box = $('#upd-box');
+    if (!box) return;
+    if (!u) { box.innerHTML = ''; return; }
+    const mac = api.platform === 'darwin';
+    const status = updStep === 'done'
+      ? (mac ? 'The installer is open. Drag Andromeda into Applications and replace the old one, then open it again. Andromeda closes now.' : 'Installing. Andromeda will close and open again in a moment.')
+      : typeof updStep === 'number' ? `Downloading… ${Math.round(updStep * 100)}%` : '';
+    box.innerHTML = `<div class="upd-box"><p><b>Version ${esc(u.version)} is ready.</b> Your courses and settings stay as they are.</p>
+      ${u.notes ? `<p class="upd-notes">${esc(u.notes)}</p>` : ''}
+      ${status ? `<p class="muted">${esc(status)}</p>` : '<button type="button" class="btn" id="upd-go">Install update</button>'}</div>`;
+    const go = $('#upd-go', box);
+    if (go) go.addEventListener('click', async () => {
+      updStep = 0; renderUpdate();
+      try { await api.installUpdate(); updStep = 'done'; } catch (e) { updStep = null; toast(e.message); }
+      renderUpdate();
+    });
+  }
+  $('#upd').addEventListener('click', () => { show('settings'); setTimeout(() => { const b = $('#upd-box'); if (b) b.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'center' }); }, 450); });
+  api.onUpdate((u) => { S.update = u; renderUpdate(); });
+  api.onUpdateProgress((p) => { if (updStep !== 'done') { updStep = p; renderUpdate(); } });
 
   // ---------- sync status (header, and the line in Settings) ----------
   const ago = (t) => {

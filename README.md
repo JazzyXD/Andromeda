@@ -2,6 +2,19 @@
 
 A night-sky learning app for your courses and study guides, run on your own Claude plan through Claude Code.
 
+## Install (stage 5)
+
+Download the installer from the [latest release](https://github.com/JazzyXD/Andromeda/releases/latest) (sign in to GitHub first; the repo is private). You also need Git and [Claude Code](https://code.claude.com/docs/en/setup) signed in (type `claude` in a terminal once).
+
+- **Windows:** run `Andromeda-<version>-windows.exe`. Windows will say it protected your PC, because the installer isn't signed (that costs money every year). Click **More info**, then **Run anyway**. You only do this once.
+- **Mac:** open `Andromeda-<version>-mac.dmg` and drag Andromeda into Applications. The first time you open it, macOS says it can't check it for malicious software. Open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** beside Andromeda. You only do this once.
+
+Your courses stay in the same data folder, and your laptop's name and GitHub sign-in carry over from `npm start`. (On a Mac, the installed app may ask you to reconnect GitHub once, because macOS keeps the sign-in per app.)
+
+**Updates:** the installed app checks your releases every few hours. When there's a new version, a gold **Update to …** appears in the header; Settings > About installs it. On Windows it installs and reopens on its own. On a Mac the installer opens, and you drag the new Andromeda into Applications to replace the old one.
+
+**Making a release:** nothing builds on its own. Go to the repo's **Actions** tab, pick **Build installers**, and press **Run workflow** (or ask Claude to start it). It builds both installers from the version in package.json and posts them as a release, using about 70 of GitHub's 2,000 free monthly minutes.
+
 ## What works now (stage 4)
 
 - **Two laptops, one set of courses:** connect the same GitHub account on both and they stay the same. Andromeda checks for the other laptop's changes when it opens, every 2 minutes, when you come back to its window, and right before Claude changes anything. The header shows where things stand (synced, syncing, offline, or what went wrong); click it to sync now.
@@ -29,7 +42,7 @@ A night-sky learning app for your courses and study guides, run on your own Clau
 
 Your data lives in an `Andromeda Data` folder in your home folder, separate from the app's code.
 
-## Try it
+## Run from the code instead
 
 You need [Node.js](https://nodejs.org) (LTS), Git, and [Claude Code](https://code.claude.com/docs/en/setup) signed in (type `claude` in a terminal once).
 
