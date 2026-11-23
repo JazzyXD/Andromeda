@@ -395,6 +395,23 @@ const handlers = {
     store.emit('changed');
     return store.inbox();
   },
+  // How long a course file is, from its extracted text, so Find dates can ask before a big one.
+  // Slides and PDF pages are counted exactly; Word and Excel by words (about 400 to a page).
+  'files:size': async (_e, { courseId, name }) => {
+    const c = await store.findCourse(courseId);
+    const f = (c.files || []).find((x) => x.name === name);
+    if (!f || !f.text) return null;
+    const text = await fs.promises.readFile(store.p(...f.text.split('/')), 'utf8').catch(() => '');
+    if (!text) return null;
+    const slides = (text.match(/^## Slide \d/gm) || []).length, pages = (text.match(/^## Page \d/gm) || []).length;
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const counted = slides || pages;
+    return {
+      pages: counted || null, unit: slides ? (slides === 1 ? 'slide' : 'slides') : (pages === 1 ? 'page' : 'pages'), words,
+      tokens: Math.max(1, Math.round((text.length / 3.5 + 5000) / 1000)), // the text, plus Claude's instructions and reply
+      long: counted ? counted > 10 : words > 4000,
+    };
+  },
   'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
   'github:start': () => github.start(),
   'github:wait': async () => { await github.wait(); return linkAndSync(); },

@@ -335,7 +335,7 @@
       if (!a) return;
       closeFileMenu();
       if (a.dataset.a === 'open') api.openFile(c.id, name).catch((err) => toast(err.message));
-      else if (a.dataset.a === 'dates') findDates(c.id, name);
+      else if (a.dataset.a === 'dates') checkSize(c, row, name);
       else confirmRemove(c, row, name);
     });
     m.addEventListener('keydown', (e) => {
@@ -348,6 +348,22 @@
   document.addEventListener('scroll', (e) => { if (fileMenuBtn && !(e.target.closest && e.target.closest('.fl-menu'))) closeFileMenu(); }, true);
   window.addEventListener('resize', () => closeFileMenu());
   // Removing a file asks first, right in its row. No Claude involved, and it can be undone.
+  // Find dates on a long file (over 10 pages or slides, or about that many words) asks first,
+  // showing roughly what it will cost. Short files go straight ahead.
+  async function checkSize(c, row, name) {
+    let size = null;
+    try { size = await api.fileSize(c.id, name); } catch { /* go ahead */ }
+    if (!size || !size.long) { findDates(c.id, name); return; }
+    const was = row.innerHTML;
+    const restore = () => { row.classList.remove('asking'); row.innerHTML = was; $('.fl-more', row).addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, $('.fl-more', row)); }); };
+    const length = size.pages ? `${size.pages} ${size.unit}` : `about ${size.words.toLocaleString()} words`;
+    row.classList.add('asking');
+    row.innerHTML = `<span class="fl-ask"><b>${esc(name)}</b> is ${length}. Finding dates in it uses roughly ${size.tokens}k tokens.</span><button type="button" class="btn" data-a="yes">Find dates</button><button type="button" class="btn ghost" data-a="no">Cancel</button>`;
+    $('[data-a="no"]', row).focus({ preventScroll: true });
+    $('[data-a="no"]', row).addEventListener('click', restore);
+    $('[data-a="yes"]', row).addEventListener('click', () => { restore(); findDates(c.id, name); });
+  }
+
   function confirmRemove(c, row, name) {
     const was = row.innerHTML;
     row.classList.add('asking');
