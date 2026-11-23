@@ -267,7 +267,17 @@ class DataStore extends EventEmitter {
     const gone = (which || []).map((w) => this.pick(c.upcoming, w, 'Coming up item', c, (u) => u.title));
     c.upcoming = c.upcoming.filter((u) => !gone.includes(u));
     await this.saveCourse(c);
-    return gone.map((u) => ({ course: c.name, courseId: c.id, where: 'Coming up', what: `Removed ${u.title}` }));
+    return gone.map((u) => ({ course: c.name, courseId: c.id, where: validKind(u.kind, u.title) === 'exam' ? 'Exams' : 'Assignments', what: `Removed ${u.title}` }));
+  }
+
+  // Weeks, each by id or label. Their files stay in the course.
+  async removeWeeks(ref, which) {
+    const c = await this.findCourse(ref);
+    const gone = [...new Set((which || []).map((w) => this.pick(c.weeks, w, 'week', c, (x) => x.label)))];
+    if (!gone.length) fail('Say which weeks to remove.');
+    c.weeks = c.weeks.filter((w) => !gone.includes(w));
+    await this.saveCourse(c);
+    return gone.map((w) => ({ course: c.name, courseId: c.id, where: 'Weeks', what: `Removed ${[w.label, w.title].filter(Boolean).join(': ')}` }));
   }
 
   checkFiles(c, files) {

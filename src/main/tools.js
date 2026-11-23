@@ -9,7 +9,7 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { Invalid } = require('./data');
 
 const TOOL_NAMES = {
-  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'propose_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'offer_guide', 'delete_course', 'remove_files'],
+  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'propose_weeks', 'change_week', 'remove_weeks', 'attach_files', 'offer_find_dates', 'offer_guide', 'delete_course', 'remove_files'],
   dates: ['propose_dates'],
   guide: ['save_part'],
 };
@@ -107,6 +107,11 @@ function createToolServer(store, extract) {
       description: 'Change ONE existing week: relabel it, change its title, or set which course files belong to it. Only include what changes.',
       inputSchema: { course, which, label: z.string().optional(), title: z.string().optional(), files: z.array(z.string()).optional() },
     }, wrap(({ course: ref, which: w, ...f }) => store.changeWeek(ref, w, f)));
+
+    server.registerTool('remove_weeks', {
+      description: 'Remove weeks, each by id or current label. The course files in them stay in the course. Can be undone.',
+      inputSchema: { course, weeks: z.array(z.string()) },
+    }, wrap(({ course: ref, weeks }) => store.removeWeeks(ref, weeks)));
 
     server.registerTool('attach_files', {
       description: 'File newly added files (listed as "Waiting to be filed") into a course. Their text is pulled out automatically.',

@@ -14,6 +14,7 @@ const FRIENDLY = {
   mcp__andromeda__remove_upcoming: 'Removing tests or assignments',
   mcp__andromeda__add_weeks: 'Adding weeks',
   mcp__andromeda__propose_weeks: 'Listing the weeks found',
+  mcp__andromeda__remove_weeks: 'Removing weeks',
   mcp__andromeda__change_week: 'Changing a week',
   mcp__andromeda__attach_files: 'Filing slides',
   mcp__andromeda__delete_course: 'Asking before deleting',
