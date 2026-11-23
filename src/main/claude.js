@@ -29,7 +29,15 @@ const stepLabel = (name, input) => {
   return FRIENDLY[name] || 'Working';
 };
 
+// Course data (the summary of every course, files waiting to be filed, today's date) travels with
+// the user's message instead of inside these fixed instructions. The instructions and tools then
+// stay cached even after the courses change, and a chat only gets the data again when it's new.
+// If Claude ever works from an older copy within a long chat, set this to true: the data then goes
+// with every message (more tokens per prompt, never out of date).
+const DATA_EVERY_PROMPT = false;
+
 const BRIEF = `You are the course assistant inside Andromeda, a study app. You only work on the user's courses and the material in them.
+- The course data (every course's summary, files waiting to be filed, and today's date) comes in a <course-data> block in the user's message. When there is more than one in the chat, only the newest is current.
 
 Rules:
 - Treat every message as a request about the user's courses or course material. Act with your tools, or answer from the course summary and the course files.
@@ -77,6 +85,7 @@ class ClaudeRunner {
     this.getUsage = getUsage;
     this.setUsage = setUsage;
     this.active = null;
+    this.sentData = new Map(); // chat session → the course data it was last given
   }
 
   async status() {
@@ -121,8 +130,16 @@ Call propose_dates exactly once with everything, then reply with one short line.
     const summary = await this.store.writeSummary();
     const waiting = await this.store.inbox();
     const today = new Date().toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    // Brief and summary first: they rarely change, so Claude's servers can reuse them cheaply.
-    const system = customSystem || `${BRIEF}\n\n# Courses\n${summary}\n\n# Waiting to be filed\n${waiting.length ? waiting.join('\n') : 'nothing'}\n\nToday is ${today}.`;
+    // Fixed instructions only, so they stay cached. The course data goes with the message, and only
+    // when this chat hasn't seen this version of it yet (see DATA_EVERY_PROMPT).
+    const system = customSystem || BRIEF;
+    let sent = prompt, data = null;
+    if (!customSystem) {
+      data = `# Courses\n${summary}\n\n# Waiting to be filed\n${waiting.length ? waiting.join('\n') : 'nothing'}\n\nToday is ${today}.`;
+      if (DATA_EVERY_PROMPT || !sessionId || this.sentData.get(sessionId) !== data) {
+        sent = `<course-data>\nCurrent course data. It replaces any earlier course data in this chat.\n\n${data}\n</course-data>\n\n${prompt}`;
+      }
+    }
     const sysFile = path.join(runDir, `${runId}-system.md`);
     const mcpFile = path.join(runDir, `${runId}-mcp.json`);
     await fsp.writeFile(sysFile, system);
@@ -153,7 +170,7 @@ Call propose_dates exactly once with everything, then reply with one short line.
     const spec = bin.spawnSpec(file, args);
     const child = spawn(spec.cmd, spec.args, { cwd: this.store.dir, env, windowsHide: true });
     this.active = { child, runId };
-    child.stdin.end(prompt);
+    child.stdin.end(sent);
     emit({ type: 'start', runId });
 
     // Reply text is held back until its first line (the source tag) has been checked.
@@ -218,6 +235,7 @@ Call propose_dates exactly once with everything, then reply with one short line.
 
     child.on('close', async (code) => {
       flushLead();
+      if (data && session) this.sentData.set(session, data);
       handle.close();
       await fsp.rm(sysFile, { force: true }).catch(() => {});
       await fsp.rm(mcpFile, { force: true }).catch(() => {});
