@@ -57,12 +57,14 @@
 
   // Each course's constellation, from the shared list, drawn 3x larger in the sky.
   const SHARED = (window.AndromedaConstellations && window.AndromedaConstellations.COURSE) || {};
-  // They're spread evenly along the Milky Way, alternating above and below it (like Lyra, Cygnus and
-  // Aquila in the real sky). Each one takes the nearest free spot to its share of the band where its
-  // outline, plus a margin, touches no other constellation. A second row further out takes the overflow.
+  // They're spread evenly along the Milky Way, alternating above and below it, each in the dark sky
+  // just beside the glow: every star stays at least CLEAR px from the band's centre line, so the stars
+  // and lines read clearly, with the band running close by. Each takes the nearest free spot to its
+  // share of the band where its outline, plus a margin, touches no other constellation.
   {
     const keys = Object.keys(SHARED), line = bandSamples(20), N = line.length;
     const M = 90; // room around each one, so outlines stay at least 180px apart
+    const CLEAR = 360; // the glow fades out about 300px from the band's centre
     const span = (pts) => {
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
       return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
@@ -72,30 +74,48 @@
       return [s.x0 + c.at[0] - M, s.y0 + c.at[1] - M, s.x1 + c.at[0] + M, s.y1 + c.at[1] + M];
     });
     const hits = (b) => placed.some((p) => [-PERIOD, 0, PERIOD].some((sh) => b[0] + sh < p[2] && b[2] + sh > p[0] && b[1] < p[3] && b[3] > p[1]));
-    const LANES = [-330, 330, -700, 700];
+    // How far a point is from the band's centre line, wherever it is round the sky.
+    const bandDist = (x, y) => {
+      let best = Infinity;
+      for (const [bx, by] of line) {
+        let dx = Math.abs(x - bx) % PERIOD; dx = Math.min(dx, PERIOD - dx);
+        if (dx < best) best = Math.min(best, Math.hypot(dx, y - by));
+      }
+      return best;
+    };
+    const OFFSETS = [];
+    for (let o = 300; o <= 1300; o += 50) OFFSETS.push(o);
     keys.forEach((key, k) => {
       const c = SHARED[key];
       const pts = c.p.map(([x, y, m]) => [x * 3, y * 3, (m || 1) * 1.05]);
-      const s = span(pts), w = s.x1 - s.x0, h = s.y1 - s.y0;
+      const s = span(pts), w = s.x1 - s.x0, h = s.y1 - s.y0, mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
       const ideal = ((k + 0.5) / keys.length) * N, pref = k % 2 ? 1 : -1;
       let best = null;
-      for (let i = 0; i < N; i++) {
-        for (const lane of LANES) {
-          const cx = line[i][0], cy = line[i][1] + lane;
-          const b = [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M];
-          if (hits(b)) continue;
-          let di = Math.abs(i - ideal); di = Math.min(di, N - di);
-          const score = di + (Math.abs(lane) > 400 ? 30 : 0) + (Math.sign(lane) === pref ? 0 : 6);
-          if (!best || score < best.score) best = { score, cx, cy, b };
+      // Search outward from its share of the band; stop once nothing further along can do better.
+      for (let step = 0; step <= N / 2; step++) {
+        if (best && step > best.score) break;
+        for (const i of step ? [Math.round(ideal) + step, Math.round(ideal) - step] : [Math.round(ideal)]) {
+          const [bx, by] = line[((i % N) + N) % N];
+          for (const side of [pref, -pref]) {
+            for (const off of OFFSETS) {
+              const cx = bx, cy = by + side * off;
+              const b = [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M];
+              if (hits(b)) continue;
+              const near = Math.min(...pts.map(([x, y]) => bandDist(x - mx + cx, y - my + cy)));
+              if (near < CLEAR) continue;
+              const score = step + (near - CLEAR) / 25 + (side === pref ? 0 : 6);
+              if (!best || score < best.score) best = { score, cx, cy, b };
+              break; // further out on this side would only be further from the band
+            }
+          }
         }
       }
-      if (!best) { // no free spot left: sit on its share of the band anyway
-        const [cx, by] = line[Math.floor(ideal) % N], cy = by + pref * 330;
+      if (!best) { // no free spot left: sit beside its share of the band anyway
+        const [cx, by] = line[Math.floor(ideal) % N], cy = by + pref * (CLEAR + h / 2);
         best = { cx, cy, b: [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M] };
       }
       placed.push(best.b);
-      const at = [best.cx - (s.x0 + s.x1) / 2, best.cy - (s.y0 + s.y1) / 2];
-      CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at, course: true };
+      CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at: [best.cx - mx, best.cy - my], course: true };
     });
   }
   // A view id ('courses'), or a course constellation ('con:lyra').
