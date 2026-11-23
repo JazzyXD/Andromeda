@@ -44,19 +44,19 @@
       name: 'Ursa Major',
       pts: [[1060, 150, 1.3], [1050, 232, 1.2], [1160, 262, 1.1], [1182, 192, 1], [1262, 182, 1.2], [1332, 170, 1.2], [1410, 212, 1.2], [1206, 382, 0.9], [1234, 470, 0.9], [962, 330, 0.9], [932, 420, 0.9]],
       edges: [[6, 5], [5, 4], [4, 3], [3, 0], [0, 1], [1, 2], [2, 3], [2, 7], [7, 8], [1, 9], [9, 10]],
-      at: [-19, 760],
+      at: [-19, 193], // just above the Milky Way, so it sweeps across the screen below
     },
     ursaMinor: {
       name: 'Ursa Minor',
       pts: [[1250, 150, 1.7], [1196, 214, 0.9], [1150, 270, 0.9], [1118, 330, 0.9], [1166, 398, 1.3], [1100, 436, 1.1], [1070, 370, 0.85]],
       edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]],
-      at: [4970, 1857], // far side of the sky from Ursa Major, so Settings feels like its own place
+      at: [4970, 1365], // far side of the sky from Ursa Major, so Settings feels like its own place
     },
     orion: {
       name: 'Orion',
       pts: [[1150, 166, 1], [1084, 236, 1.9], [1232, 256, 1.3], [1130, 420, 1.2], [1162, 410, 1.2], [1194, 400, 1.2], [1102, 606, 1.2], [1250, 596, 1.9]],
       edges: [[0, 1], [0, 2], [1, 3], [3, 4], [4, 5], [2, 5], [3, 6], [5, 7]],
-      at: [3200, 1500],
+      at: [3200, 958],
     },
   };
 
@@ -170,7 +170,7 @@
   const glowShare = (d) => 0.1 + 0.9 * Math.pow(d, 1.5);
   const faintShare = (d) => 0.08 + 1.375 * Math.pow(d, 1.8); // 1 is every star the sky had before
   const brightShare = (d) => 0.25 + 0.75 * clamp(d / 0.45, 0, 1);
-  const OTHER_LINES = 0.4; // other constellations in view get faint lines; the main one traces in at full
+  const OTHER_LINES = 0.28; // other constellations in view get faint lines; the main one traces in at full
 
   // Sample the band's centre line.
   function bandSamples(step) {
@@ -306,9 +306,9 @@
     // Ursa Major's part of the real sky is full of galaxies: Bode's Galaxy (M81) with the Cigar (M82)
     // beside it, and the Pinwheel (M101) by the end of the Big Dipper's handle.
     if (CONSTELLATIONS.ursaMajor) {
-      GALAXIES.push({ type: 'tight', seed: 81, x: 1000, y: 1420, size: 26, pa: 150, incl: 58 });
-      GALAXIES.push({ type: 'edgeon', seed: 82, x: 1075, y: 1370, size: 16, pa: 30, incl: 82 });
-      GALAXIES.push({ type: 'spiral', seed: 101, x: 1370, y: 1430, size: 24, pa: 10, incl: 15 });
+      GALAXIES.push({ type: 'tight', seed: 81, x: 780, y: 420, size: 26, pa: 150, incl: 58 });
+      GALAXIES.push({ type: 'edgeon', seed: 82, x: 835, y: 372, size: 16, pa: 30, incl: 82 });
+      GALAXIES.push({ type: 'spiral', seed: 101, x: 1540, y: 430, size: 24, pa: 10, incl: 15 });
     }
     const TYPES = ['spiral', 'elliptical', 'edgeon', 'lenticular', 'irregular', 'tight', 'elliptical', 'spiral', 'sombrero', 'pair', 'edgeon', 'elliptical', 'spiral', 'irregular', 'tight', 'lenticular'];
     // Mostly in the dark sky within reach of the views (up to about 1100px from the band).

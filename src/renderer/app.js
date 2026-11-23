@@ -209,6 +209,46 @@
     $$('.gcard', el).forEach((b) => b.addEventListener('click', () => openGuide(b.dataset.guide)));
   }
 
+  // A frosted dropdown in place of the browser's own menus (keyboard: arrows, Enter, Escape).
+  const CHEV = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  function ddHtml(id, opts, value) {
+    const cur = opts.find((o) => o[0] === value) || opts[0] || ['', ''];
+    return `<div class="dd" id="${id}"><button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="${id}-l ${id}-v"><span id="${id}-v">${esc(cur[1])}${cur[2] ? ` <small>${esc(cur[2])}</small>` : ''}</span>${CHEV}</button>
+      <div class="dd-menu" role="listbox" hidden>${opts.map(([v, l, sub]) => `<button type="button" role="option" data-v="${esc(v)}" aria-selected="${v === cur[0]}"><span>${esc(l)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('')}</div></div>`;
+  }
+  function closeDropdowns(except) {
+    $$('.dd').forEach((d) => { if (d !== except) { $('.dd-menu', d).hidden = true; $('.dd-btn', d).setAttribute('aria-expanded', 'false'); } });
+  }
+  function wireDd(id, onChange) {
+    const root = $('#' + id), btn = $('.dd-btn', root), menu = $('.dd-menu', root);
+    const items = () => $$('[data-v]', menu);
+    const open = (on) => {
+      if (on === !menu.hidden) return;
+      btn.setAttribute('aria-expanded', String(on));
+      if (!on) { menu.hidden = true; return; }
+      closeDropdowns(root);
+      menu.hidden = false;
+      menu.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: reduced() ? 1 : 280, easing: SPRING });
+      (menu.querySelector('[aria-selected="true"]') || items()[0]).focus();
+    };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); open(menu.hidden); });
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-v]');
+      if (!b) return;
+      open(false); btn.focus();
+      if (b.getAttribute('aria-selected') !== 'true') onChange(b.dataset.v);
+    });
+    root.addEventListener('keydown', (e) => {
+      const list = items(), i = list.indexOf(document.activeElement);
+      if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); e.stopPropagation(); open(false); btn.focus(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); if (menu.hidden) open(true); else list[Math.min(list.length - 1, i + 1)].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (!menu.hidden) list[Math.max(0, i - 1)].focus(); }
+      else if (e.key === 'Tab' && !menu.hidden) open(false);
+    });
+  }
+  document.addEventListener('click', () => closeDropdowns());
+
   // The plan: everything a guide needs, filled in as far as the app can, with nothing built until Start.
   async function openPlan({ courseId, testId }) {
     const c = courseById(courseId) || S.courses[0];
@@ -216,8 +256,9 @@
     S.plan = { courseId: c.id, testId: testId || '', weekIds: [], subjects: [], exam: '', shortOnTime: false, model: 'opus', effort: 'high', busy: false };
     planCourse(c);
     try { S.plan.subjects = await api.guideGuess(c.name); } catch { S.plan.subjects = ['procedural']; }
-    if (S.view !== 'guides' || S.course) show('guides'); else renderGuides();
+    if (S.view !== 'guides' || S.course || S.guide) { renderGuides(); show('guides'); return; }
     renderGuides();
+    enter($('#view-guides'), { dx: 0, dy: -1 }, 0);
   }
   function planCourse(c) {
     const P = S.plan;
@@ -233,37 +274,35 @@
       || `<p class="muted">${esc(c.name)} has no weeks yet. Ask below, like “Chapter 12 is taxable income for corporations”, and add its slides.</p>`;
     const days = test ? daysTo(test.date) : null;
     const u = S.usage && S.usage.fiveHour;
-    const warn = u && u.pct >= 0.7 ? `<p class="pl-warn">Your 5-hour limit is at ${Math.round(u.pct * 100)}%. The guide will pause when it runs out and carry on by itself after ${u.resetsAt ? clock(u.resetsAt) : 'it resets'}, as long as Andromeda is open.</p>` : '';
-    const modelOpts = MODELS.map(([v, l]) => `<option value="${v}" ${P.model === v ? 'selected' : ''}>${l}</option>`).join('');
-    const effortOpts = EFFORT.map(([v, l]) => `<option value="${v}" ${P.effort === v ? 'selected' : ''}>${l}</option>`).join('');
+    const warn = u && u.pct >= 0.7 ? `<p class="pl-warn m">Your 5-hour limit is at ${Math.round(u.pct * 100)}%. The guide will pause when it runs out and carry on by itself after ${u.resetsAt ? clock(u.resetsAt) : 'it resets'}, as long as Andromeda is open.</p>` : '';
     const nWeeks = P.weekIds.length;
     return `<section class="panel plan m" aria-label="Plan a guide">
-      <div class="pl-head"><h2>Plan a learning guide</h2><button type="button" class="pill-btn" id="pl-cancel">Cancel</button></div>
-      <div class="pl-grid">
-        <label class="pl-f"><span>Course</span><select id="pl-course">${S.courses.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
-        <label class="pl-f"><span>For</span><select id="pl-test"><option value="">No particular test</option>${(c.upcoming || []).filter((x) => !x.done).map((x) => `<option value="${esc(x.id)}" ${x.id === P.testId ? 'selected' : ''}>${esc(x.title)}${x.date ? ' · ' + esc(prettyDate(x.date)) : ''}</option>`).join('')}</select></label>
+      <div class="pl-head m"><h2>Plan a learning guide</h2><button type="button" class="pill-btn" id="pl-cancel">Cancel</button></div>
+      <div class="pl-grid m">
+        <div class="pl-f"><span id="pl-course-l">Course</span>${ddHtml('pl-course', S.courses.map((x) => [x.id, x.name]), c.id)}</div>
+        <div class="pl-f"><span id="pl-test-l">For</span>${ddHtml('pl-test', [['', 'No particular test'], ...(c.upcoming || []).filter((x) => !x.done).map((x) => [x.id, x.title, x.date ? prettyDate(x.date) : 'Date not set'])], P.testId)}</div>
       </div>
-      <div class="pl-f"><span>Weeks</span><div class="pl-weeks">${weeks}</div></div>
-      <div class="pl-f"><span>Kind of course</span><div class="seg pl-subj" role="group" aria-label="Kind of course">${Object.entries(S.subjects).map(([k, l]) => `<button type="button" data-subj="${k}" aria-pressed="${P.subjects.includes(k)}">${esc(l)}</button>`).join('')}</div><small class="pl-note">Guessed from the course name. Pick up to two.</small></div>
-      <label class="pl-f"><span>Exam format</span><input type="text" id="pl-exam" value="${esc(P.exam)}" placeholder="For example: 40 multiple choice and 2 short answer, 2 hours"><small class="pl-note">Optional. Practice questions follow it.</small></label>
-      ${days != null && days >= 0 && days < 4 ? `<label class="pl-check"><input type="checkbox" id="pl-short" ${P.shortOnTime ? 'checked' : ''}> <span>Short on time: ${esc(test.title)} is ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}. Tighter notes, most likely topics first.</span></label>` : ''}
-      <div class="pl-grid">
-        <label class="pl-f"><span>Model</span><select id="pl-model">${modelOpts}</select></label>
-        <label class="pl-f"><span>Effort</span><select id="pl-effort">${effortOpts}</select></label>
+      <div class="pl-f m"><span>Weeks</span><div class="pl-weeks">${weeks}</div></div>
+      <div class="pl-f m"><span>Kind of course</span><div class="seg pl-subj" role="group" aria-label="Kind of course">${Object.entries(S.subjects).map(([k, l]) => `<button type="button" data-subj="${k}" aria-pressed="${P.subjects.includes(k)}">${esc(l)}</button>`).join('')}</div><small class="pl-note">Guessed from the course name. Pick up to two.</small></div>
+      <label class="pl-f m"><span>Exam format</span><input type="text" id="pl-exam" value="${esc(P.exam)}" placeholder="For example: 40 multiple choice and 2 short answer, 2 hours"><small class="pl-note">Optional. Practice questions follow it.</small></label>
+      ${days != null && days >= 0 && days < 4 ? `<label class="pl-check m"><input type="checkbox" id="pl-short" ${P.shortOnTime ? 'checked' : ''}> <span>Short on time: ${esc(test.title)} is ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}. Tighter notes, most likely topics first.</span></label>` : ''}
+      <div class="pl-grid m">
+        <div class="pl-f"><span id="pl-model-l">Model</span>${ddHtml('pl-model', MODELS.map(([v, l]) => [v, l]), P.model)}</div>
+        <div class="pl-f"><span id="pl-effort-l">Effort</span>${ddHtml('pl-effort', EFFORT.map(([v, l]) => [v, l]), P.effort)}</div>
       </div>
       ${warn}
-      <div class="pl-foot"><span class="muted">${nWeeks ? `Builds ${nWeeks} week${nWeeks === 1 ? '' : 's'}${nWeeks > 1 ? ', a final quiz' : ''} and an opening, one at a time. You can read each week as soon as it's done.` : 'Pick at least one week with files.'}</span><button type="button" class="btn" id="pl-start" ${nWeeks && P.subjects.length && !P.busy ? '' : 'disabled'}>Build guide</button></div>
+      <div class="pl-foot m"><span class="muted">${nWeeks ? `Builds ${nWeeks} week${nWeeks === 1 ? '' : 's'}${nWeeks > 1 ? ', a final quiz' : ''} and an opening, one at a time. You can read each week as soon as it's done.` : 'Pick at least one week with files.'}</span><button type="button" class="btn" id="pl-start" ${nWeeks && P.subjects.length && !P.busy ? '' : 'disabled'}>Build guide</button></div>
     </section>`;
   }
   function wirePlan() {
     const P = S.plan, el = $('#view-guides'), re = () => { const y = el.scrollTop; renderGuides(); el.scrollTop = y; };
-    $('#pl-cancel').addEventListener('click', () => { S.plan = null; renderGuides(); });
-    $('#pl-course').addEventListener('change', async (e) => {
-      const c = courseById(e.target.value); planCourse(c); P.testId = '';
+    $('#pl-cancel').addEventListener('click', () => { S.plan = null; renderGuides(); enter(el, { dx: 0, dy: 1 }, 0); });
+    wireDd('pl-course', async (v) => {
+      const c = courseById(v); planCourse(c); P.testId = '';
       try { P.subjects = await api.guideGuess(c.name); } catch { /* keep */ }
       re();
     });
-    $('#pl-test').addEventListener('change', (e) => { P.testId = e.target.value; P.shortOnTime = false; re(); });
+    wireDd('pl-test', (v) => { P.testId = v; P.shortOnTime = false; re(); });
     $$('[data-week]', el).forEach((b) => b.addEventListener('change', () => { P.weekIds = $$('[data-week]', el).filter((x) => x.checked).map((x) => x.dataset.week); re(); }));
     $$('[data-subj]', el).forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.subj;
@@ -272,8 +311,8 @@
     }));
     $('#pl-exam').addEventListener('input', (e) => { P.exam = e.target.value; });
     const sh = $('#pl-short'); if (sh) sh.addEventListener('change', () => { P.shortOnTime = sh.checked; });
-    $('#pl-model').addEventListener('change', (e) => { P.model = e.target.value; });
-    $('#pl-effort').addEventListener('change', (e) => { P.effort = e.target.value; });
+    wireDd('pl-model', (v) => { P.model = v; re(); });
+    wireDd('pl-effort', (v) => { P.effort = v; re(); });
     $('#pl-start').addEventListener('click', async () => {
       P.busy = true; $('#pl-start').disabled = true;
       try {
