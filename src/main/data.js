@@ -38,6 +38,13 @@ function validTime(t) {
   if (!m || +m[1] > 23 || +m[2] > 59) fail(`"${t}" isn't a time in 24-hour HH:MM form.`);
   return `${m[1].padStart(2, '0')}:${m[2]}`;
 }
+// Exams (tests, midterms, finals) and assignments (everything else, quizzes included) show in
+// separate tabs. Claude says which when it adds one; otherwise the name decides.
+const EXAM_WORDS = /\b(tests?|midterms?|mid-terms?|exams?|examinations?|finals?)\b/i;
+const NOT_EXAM_WORDS = /\b(projects?|papers?|essays?|reports?|presentations?|assignments?|cases?|quiz(zes)?|labs?)\b/i;
+const guessKind = (title) => (EXAM_WORDS.test(title) && !NOT_EXAM_WORDS.test(title) ? 'exam' : 'assignment');
+const validKind = (k, title) => (k === 'exam' || k === 'assignment' ? k : guessKind(title));
+
 const prettyDate = (d) => {
   if (!d) return '';
   const [y, m, day] = d.split('-').map(Number);
@@ -218,9 +225,9 @@ class DataStore extends EventEmitter {
       if (c.upcoming.some((u) => u.title.toLowerCase() === title.toLowerCase() && (u.date || '') === (raw.date || ''))) {
         fail(`"${title}" is already in ${c.name}'s Coming up. Use change_upcoming to edit it.`);
       }
-      const it = { id: uid(), title, date: validDate(raw.date), time: validTime(raw.time), covers: clean(raw.covers, 160), done: false };
+      const it = { id: uid(), title, kind: validKind(raw.kind, title), date: validDate(raw.date), time: validTime(raw.time), covers: clean(raw.covers, 160), done: false };
       c.upcoming.push(it);
-      changes.push({ course: c.name, courseId: c.id, where: 'Coming up', what: this.describe(it) });
+      changes.push({ course: c.name, courseId: c.id, where: it.kind === 'exam' ? 'Exams' : 'Assignments', what: this.describe(it) });
     }
     c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     await this.saveCourse(c);
@@ -232,7 +239,7 @@ class DataStore extends EventEmitter {
     const c = await this.findCourse(ref);
     const fresh = (items || []).filter((raw) => clean(raw.title, 80) && !c.upcoming.some((u) => u.title.toLowerCase() === clean(raw.title, 80).toLowerCase() && (u.date || '') === (raw.date || '')));
     if (!fresh.length) return [];
-    return this.addUpcoming(c.id, fresh.map((r) => ({ title: r.title, date: r.date || '', time: r.time || '', covers: r.covers || '' })));
+    return this.addUpcoming(c.id, fresh.map((r) => ({ title: r.title, kind: r.kind, date: r.date || '', time: r.time || '', covers: r.covers || '' })));
   }
 
   // Edit one item that already exists: rename, move, set what it covers, mark done.
@@ -245,10 +252,11 @@ class DataStore extends EventEmitter {
     if (f.time !== undefined) it.time = validTime(f.time);
     if (f.covers !== undefined) it.covers = clean(f.covers, 160);
     if (f.done !== undefined) it.done = !!f.done;
+    if (f.kind !== undefined) it.kind = validKind(f.kind, it.title);
     c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     await this.saveCourse(c);
     const what = (before !== it.title ? `${before} renamed to ` : '') + this.describe(it) + (it.done ? ' (done)' : '');
-    return [{ course: c.name, courseId: c.id, where: 'Coming up', what }];
+    return [{ course: c.name, courseId: c.id, where: validKind(it.kind, it.title) === 'exam' ? 'Exams' : 'Assignments', what }];
   }
 
   async removeUpcoming(ref, which) {
@@ -372,7 +380,7 @@ class DataStore extends EventEmitter {
       const meta = [c.term && `Term: ${c.term}`, c.instructor && `Instructor: ${c.instructor}`, c.schedule && `Schedule: ${c.schedule}`, c.school && `School: ${c.school}`].filter(Boolean);
       if (meta.length) lines.push(meta.join(' | '));
       if (c.notes) lines.push(`Notes: ${c.notes}`);
-      if (c.upcoming.length) lines.push('Coming up: ' + c.upcoming.map((u) => `[id ${u.id}] ${u.title}${u.date ? ' ' + u.date : ''}${u.time ? ' ' + u.time : ''}${u.covers ? ' (' + u.covers + ')' : ''}${u.done ? ' [done]' : ''}`).join('; '));
+      if (c.upcoming.length) lines.push('Coming up: ' + c.upcoming.map((u) => `[id ${u.id}] ${u.title}${u.date ? ' ' + u.date : ''}${u.time ? ' ' + u.time : ''}${u.covers ? ' (' + u.covers + ')' : ''}${validKind(u.kind, u.title) === 'exam' ? ' [exam]' : ''}${u.done ? ' [done]' : ''}`).join('; '));
       if (c.weeks.length) lines.push('Weeks: ' + c.weeks.map((w) => `[id ${w.id}] ${w.label}${w.title ? ' ' + w.title : ''}${w.files.length ? ' [' + w.files.join(', ') + ']' : ''}`).join('; '));
       if (c.files.length) lines.push('Files: ' + c.files.map((f) => `${f.name}${f.text ? ' -> text at ' + f.text : ''}${f.note ? ' (' + f.note + ')' : ''}`).join('; '));
       return lines.join('\n');

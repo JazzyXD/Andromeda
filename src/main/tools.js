@@ -61,19 +61,20 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, ...f }) => store.updateCourse(ref, f)));
 
     const which = z.string().describe('The existing item: its id from the summary, or its current name');
+    const KIND = z.enum(['exam', 'assignment']).optional().describe('exam for tests, midterms and finals; assignment for everything else, quizzes included');
 
     server.registerTool('add_upcoming', {
-      description: 'Add NEW tests, quizzes or assignments to Coming up. Never use this to change one that already exists. Dates YYYY-MM-DD, times HH:MM (24h).',
-      inputSchema: { course, items: z.array(z.object({ title: z.string(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional() })) },
+      description: 'Add NEW tests, quizzes or assignments. Never use this to change one that already exists. Dates YYYY-MM-DD, times HH:MM (24h).',
+      inputSchema: { course, items: z.array(z.object({ title: z.string(), kind: KIND, date: z.string().optional(), time: z.string().optional(), covers: z.string().optional() })) },
     }, wrap(({ course: ref, items }) => store.addUpcoming(ref, items)));
 
     server.registerTool('change_upcoming', {
-      description: 'Change ONE existing Coming up item: rename it, move its date or time, set what it covers, or mark it done. Only include what changes.',
-      inputSchema: { course, which, title: z.string().optional(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional(), done: z.boolean().optional() },
+      description: 'Change ONE existing test or assignment: rename it, move its date or time, set what it covers, move it between exams and assignments, or mark it done. Only include what changes.',
+      inputSchema: { course, which, title: z.string().optional(), kind: KIND, date: z.string().optional(), time: z.string().optional(), covers: z.string().optional(), done: z.boolean().optional() },
     }, wrap(({ course: ref, which: w, ...f }) => store.changeUpcoming(ref, w, f)));
 
     server.registerTool('remove_upcoming', {
-      description: 'Remove items from Coming up, each by id or current name.',
+      description: 'Remove tests or assignments, each by id or current name.',
       inputSchema: { course, items: z.array(z.string()) },
     }, wrap(({ course: ref, items }) => store.removeUpcoming(ref, items)));
 
@@ -90,7 +91,12 @@ function createToolServer(store, extract) {
     server.registerTool('attach_files', {
       description: 'File newly added files (listed as "Waiting to be filed") into a course. Their text is pulled out automatically.',
       inputSchema: { course, files: z.array(z.string()) },
-    }, wrap(({ course: ref, files }) => store.attachFiles(ref, files, extract)));
+    }, wrap(({ course: ref, files }) => {
+      // Pasted screenshots are only for looking at; Andromeda clears them once the prompt is done.
+      const pasted = (files || []).filter((f) => /^Pasted image /.test(String(f)));
+      if (pasted.length) throw new Invalid(`${pasted.join(', ')} ${pasted.length === 1 ? 'is a pasted picture' : 'are pasted pictures'}, which aren't kept as course files. Read ${pasted.length === 1 ? 'it' : 'them'} instead; ${pasted.length === 1 ? 'it gets' : 'they get'} cleared afterwards.`);
+      return store.attachFiles(ref, files, extract);
+    }));
 
     server.registerTool('offer_find_dates', {
       description: 'When the user wants due dates, tests or deadlines pulled out of a course file (an outline, schedule or critical path), offer the Find dates button instead of reading the file yourself. Shows the button; the user starts it.',
@@ -158,13 +164,14 @@ function createToolServer(store, extract) {
       inputSchema: { items: z.array(z.object({
         title: z.string(), date: z.string().optional().describe('YYYY-MM-DD, only if the document gives or clearly implies it'),
         time: z.string().optional().describe('HH:MM 24h'), covers: z.string().optional(),
-        quote: z.string().describe('The exact words it came from'), page: z.number().optional(),
+        kind: z.enum(['exam', 'assignment']).optional().describe('exam for tests, midterms and finals; assignment for everything else, quizzes included'),
+        quote: z.string().describe('The exact words it came from'),
       })) },
     }, async ({ items }) => {
       const ok = /^\d{4}-\d{2}-\d{2}$/;
       run.proposed = items.slice(0, 80).map((it) => ({
         title: String(it.title || '').slice(0, 80), date: ok.test(it.date || '') ? it.date : '', time: /^\d{1,2}:\d{2}$/.test(it.time || '') ? it.time : '',
-        covers: String(it.covers || '').slice(0, 160), quote: String(it.quote || '').slice(0, 240), page: it.page || null,
+        covers: String(it.covers || '').slice(0, 160), quote: String(it.quote || '').slice(0, 240), kind: it.kind === 'exam' || it.kind === 'assignment' ? it.kind : undefined,
       }));
       run.onEvent({ type: 'dates', items: run.proposed });
       return { content: [{ type: 'text', text: 'Shown to the user to check.' }] };

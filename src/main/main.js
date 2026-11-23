@@ -297,8 +297,13 @@ const handlers = {
   'claude:status': () => runner.status(),
   'claude:run': async (_e, req) => {
     await sync.soon(5000); // the other laptop's latest first, so Claude changes the current version
+    // Screenshots pasted for this prompt are only for Claude to look at: cleared once it has answered.
+    const pasted = (await store.inbox()).filter((n) => /^Pasted image /.test(n));
     runner.run(req, (ev) => {
       toWin('claude:event', ev);
+      if (ev.type === 'done' && ev.ok && pasted.length) {
+        Promise.all(pasted.map((n) => fs.promises.rm(store.p('.andromeda', 'inbox', n), { force: true }))).then(() => store.emit('changed'));
+      }
       if (ev.type === 'done') { sync.idle(); if (ev.stepId) backup(); }
       if (ev.type === 'done' && ev.ok && win && !win.isFocused() && Notification.isSupported()) {
         new Notification({ title: 'Andromeda', body: ev.changes && ev.changes.length ? `${ev.changes.length} change${ev.changes.length === 1 ? '' : 's'} saved` : 'Claude replied' }).show();

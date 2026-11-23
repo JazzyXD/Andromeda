@@ -54,7 +54,14 @@
     return `<path class="cl" d="${lines}" fill="none" stroke="rgba(233,236,245,0.38)" stroke-width="0.8"/>${stars}`;
   }
   const coverStyle = (tint) => `background:linear-gradient(160deg, rgba(${tint},0.28) 0%, rgba(${tint},0.08) 48%, rgba(8,10,28,0.55) 100%)`;
-  const nextUp = (c) => (c.upcoming || []).find((u) => !u.done);
+  // Exams (tests, midterms, finals) and assignments (everything else). Same rule as data.js, for
+  // items saved before they had a kind.
+  const EXAM_WORDS = /\b(tests?|midterms?|mid-terms?|exams?|examinations?|finals?)\b/i;
+  const NOT_EXAM_WORDS = /\b(projects?|papers?|essays?|reports?|presentations?|assignments?|cases?|quiz(zes)?|labs?)\b/i;
+  const kindOf = (u) => (u.kind === 'exam' || u.kind === 'assignment' ? u.kind : EXAM_WORDS.test(u.title) && !NOT_EXAM_WORDS.test(u.title) ? 'exam' : 'assignment');
+  const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const isPast = (u) => u.done || (!!u.date && u.date < todayIso());
+  const nextUp = (c) => (c.upcoming || []).find((u) => !isPast(u));
 
   // ---------- Courses ----------
   function renderCourses() {
@@ -93,15 +100,53 @@
     });
   }
 
+  // ---------- a course's Exams and Assignments ----------
+  // Two tabs. Each shows what's ahead (the next 4, then "Show all"), with past items folded away.
+  // Exams show their scope and a Make a guide button; assignments are one line each.
+  // Both lists sit in the same spot, so switching tabs never changes the card's height.
+  S.cuTab = {}; S.cuOpen = {};
+  function renderComing(c) {
+    const box = $('#cu');
+    if (!box) return;
+    const all = c.upcoming || [];
+    const lists = { exam: all.filter((u) => kindOf(u) === 'exam'), assignment: all.filter((u) => kindOf(u) === 'assignment') };
+    const ahead = (k) => lists[k].filter((u) => !isPast(u));
+    const tab = S.cuTab[c.id] || (ahead('exam').length || !ahead('assignment').length ? 'exam' : 'assignment');
+    const when = (u) => esc([prettyDate(u.date) || 'Date not set', prettyTime(u.time)].filter(Boolean).join(' · '));
+    const row = (u, k, past) => k === 'exam'
+      ? `<div class="cu-row${past ? ' done' : ''}"><span class="cu-dot"></span><div class="cu-main"><b>${esc(u.title)}</b><span${u.covers ? ` title="${esc(u.covers)}"` : ''}>${esc(u.covers || (past ? (u.done ? 'Done' : 'Past') : 'Scope not set yet'))}</span></div>${past ? '' : `<button type="button" class="pill-btn mg" data-test="${esc(u.id)}" title="Plan a learning guide for ${esc(u.title)}">Make a guide</button>`}<span class="cu-when">${when(u)}</span></div>`
+      : `<div class="cu-row one${past ? ' done' : ''}"><span class="cu-dot"></span><div class="cu-main"><b>${esc(u.title)}${u.covers ? ` <span>${esc(u.covers)}</span>` : ''}</b></div><span class="cu-when">${when(u)}</span></div>`;
+    const list = (k) => {
+      const open = S.cuOpen[c.id + k] || {}, next = ahead(k), past = lists[k].filter(isPast);
+      const shown = open.all ? next : next.slice(0, 4);
+      const empty = k === 'exam' ? 'No exams ahead. Try “The midterm is Oct 22”.' : 'No assignments ahead. Try “Quiz 4 is due Oct 10”.';
+      return `<div class="cu-list" data-k="${k}"${k === tab ? '' : ' aria-hidden="true" inert'}>
+        ${shown.map((u) => row(u, k, false)).join('') || `<p class="muted">${lists[k].length ? 'Nothing ahead.' : empty}</p>`}
+        ${next.length > 4 ? `<button type="button" class="cu-more" data-more="all">${open.all ? 'Show fewer' : `Show all ${next.length}`}</button>` : ''}
+        ${past.length ? `<button type="button" class="cu-more" data-more="past" aria-expanded="${!!open.past}">${past.length} past</button>${open.past ? past.map((u) => row(u, k, true)).join('') : ''}` : ''}
+      </div>`;
+    };
+    const count = (k) => (ahead(k).length ? ` <small>${ahead(k).length}</small>` : '');
+    box.innerHTML = `<div class="seg cu-tabs" role="tablist"><button type="button" role="tab" data-tab="exam" aria-pressed="${tab === 'exam'}">Exams${count('exam')}</button><button type="button" role="tab" data-tab="assignment" aria-pressed="${tab === 'assignment'}">Assignments${count('assignment')}</button></div>
+      <div class="cu-lists">${list('exam')}${list('assignment')}</div>`;
+    $$('[data-tab]', box).forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.tab === tab) return;
+      S.cuTab[c.id] = b.dataset.tab;
+      renderComing(c);
+      const shown = $(`.cu-list[data-k="${b.dataset.tab}"]`, box);
+      if (!reduced()) shown.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: SPRING });
+    }));
+    $$('[data-more]', box).forEach((b) => b.addEventListener('click', () => {
+      const k = b.closest('.cu-list').dataset.k, o = S.cuOpen[c.id + k] = S.cuOpen[c.id + k] || {};
+      o[b.dataset.more] = !o[b.dataset.more];
+      renderComing(c);
+    }));
+    $$('.mg', box).forEach((b) => b.addEventListener('click', () => openPlan({ courseId: c.id, testId: b.dataset.test })));
+  }
+
   // ---------- one course ----------
   function renderCourse(c) {
     const k = conFor(c);
-    const up = (c.upcoming || []).map((u) => `<div class="cu-row${u.done ? ' done' : ''}">
-        <span class="cu-dot"></span>
-        <div class="cu-main"><b>${esc(u.title)}</b><span>${esc(u.covers || (u.done ? 'Done' : 'Scope not set yet'))}</span></div>
-        ${u.done ? '' : `<button type="button" class="pill-btn mg" data-test="${esc(u.id)}" title="Plan a learning guide for ${esc(u.title)}">Make a guide</button>`}
-        <span class="cu-when">${esc([prettyDate(u.date) || 'Date not set', prettyTime(u.time)].filter(Boolean).join(' · '))}</span>
-      </div>`).join('') || '<p class="muted">Nothing coming up. Try “The final is Dec 15”.</p>';
     const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div></div>`).join('')
       || '<p class="muted">No weeks yet. Try “Chapter 12 is taxable income for corporations”.</p>';
     const files = (c.files || []).map((fl) => `<div class="fl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
@@ -116,17 +161,18 @@
           <p class="sub">${esc([c.school, c.instructor, c.schedule].filter(Boolean).join(' · ') || 'Ask to add the instructor or schedule')}</p>
           ${c.notes ? `<p class="sub notes">${esc(c.notes)}</p>` : ''}
         </div>
-        <section class="panel cu m" aria-label="Coming up"><h2 class="cap">Coming up</h2>${up}</section>
+        <section class="panel cu m" aria-label="Exams and assignments" id="cu"></section>
       </div>
       <div class="cols">
         <section class="panel m"><h2>Weeks</h2>${weeks}</section>
-        <section class="panel m"><h2>Guides</h2>${(() => { const gs = S.guides.filter((g) => g.courseId === c.id); return gs.length ? gs.map((g) => `<button type="button" class="cg-row" data-guide="${esc(g.id)}"><b>${esc(g.title.replace(c.name + ': ', ''))}</b><span>${esc(guideStatus(g).text)}</span></button>`).join('') : `<p class="muted">No guides yet. Press Make a guide on anything in Coming up.</p>`; })()}</section>
+        <section class="panel m"><div class="panel-head"><h2>Guides</h2><button type="button" class="pill-btn" id="cg-make" title="Plan a learning guide for this course">Make a guide</button></div>${(() => { const gs = S.guides.filter((g) => g.courseId === c.id); return gs.length ? gs.map((g) => `<button type="button" class="cg-row" data-guide="${esc(g.id)}"><b>${esc(g.title.replace(c.name + ': ', ''))}</b><span>${esc(guideStatus(g).text)}</span></button>`).join('') : '<p class="muted">No guides yet.</p>'; })()}</section>
         <section class="panel m"><h2>Course files</h2>${files}</section>
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);
     $$('.cg-row', $('#view-course')).forEach((b) => b.addEventListener('click', () => { show('guides'); setTimeout(() => openGuide(b.dataset.guide), 50); }));
     $$('.fl-more', $('#view-course')).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, b); }));
-    $$('.mg', $('#view-course')).forEach((b) => b.addEventListener('click', () => openPlan({ courseId: c.id, testId: b.dataset.test })));
+    renderComing(c);
+    $('#cg-make').addEventListener('click', () => { const ex = (c.upcoming || []).find((u) => kindOf(u) === 'exam' && !isPast(u)); openPlan({ courseId: c.id, testId: ex ? ex.id : undefined }); });
   }
 
   // Opening and closing a course move like a tab change: the old screen drifts off with the stars
@@ -220,7 +266,7 @@
     }).join('');
     el.innerHTML = `<div class="inner">${head}
       <div class="g-actions m"><button type="button" class="btn" id="g-new">Plan a guide</button></div>
-      ${S.guides.length ? `<div class="ggrid">${cards}</div>` : `<div class="empty m"><p class="big">No guides yet.</p><p>Plan one here, or press Make a guide on anything in a course's Coming up.</p></div>`}</div>`;
+      ${S.guides.length ? `<div class="ggrid">${cards}</div>` : `<div class="empty m"><p class="big">No guides yet.</p><p>Plan one here, or press Make a guide beside an exam in a course.</p></div>`}</div>`;
     $('#g-new').addEventListener('click', () => openPlan({}));
     $$('.gcard', el).forEach((b) => b.addEventListener('click', () => openGuide(b.dataset.guide)));
   }
@@ -897,7 +943,7 @@
           ? `<span class="ed-when-in"><input type="date" class="ed-input ed-date-in" value="${esc(r.date)}" aria-label="Date"><input type="time" class="ed-input ed-time-in" value="${esc(r.time)}" aria-label="Time (optional)"><button type="button" class="pill-btn ed-done">Done</button></span>`
           : `<button type="button" class="ed ed-date${r.date ? '' : ' empty'}" data-i="${i}" data-f="date" aria-label="Edit date: ${esc(when(r))}">${esc(when(r))}${PENCIL}</button>`;
         const src = r.manual ? 'Added by you' : `“${esc(r.quote)}”`;
-        const tags = [r.dup && !r.edited ? 'already in Coming up' : '', r.edited && !r.manual ? 'edited by you' : ''].filter(Boolean).join(' · ');
+        const tags = [r.dup && !r.edited ? 'already added' : '', r.edited && !r.manual ? 'edited by you' : ''].filter(Boolean).join(' · ');
         return `<div class="dt-row${r.on ? '' : ' off'}${r.dup ? ' dup' : ''}">
           <label class="dt-check"><input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} aria-label="Include ${esc(r.title || 'this item')}"><span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></label>
           <span class="dt-main"><span class="dt-line">${titleField}${dateField}</span>
@@ -906,7 +952,7 @@
         </div>`;
       }).join('');
       const n = rows.filter((r) => r.on && r.title.trim()).length;
-      add.textContent = n ? `Add ${n} to Coming up` : 'Nothing ticked';
+      add.textContent = n ? `Add ${n}` : 'Nothing ticked';
       add.disabled = !n || !!editing;
 
       $$('input[type=checkbox]', list).forEach((b) => b.addEventListener('change', () => { rows[+b.dataset.i].on = b.checked; render(); }));
@@ -949,12 +995,12 @@
     });
     add.addEventListener('click', async () => {
       commit();
-      const picked = rows.filter((r) => r.on && r.title.trim()).map(({ title, date, time, covers }) => ({ title, date, time, covers }));
+      const picked = rows.filter((r) => r.on && r.title.trim()).map(({ title, kind, date, time, covers }) => ({ title, kind, date, time, covers }));
       if (!picked.length) return render();
       add.disabled = true;
       try {
         const r = await api.addDates(job.courseId, picked);
-        box.replaceWith(r.changes.length ? changesCard(r.changes, r.stepId) : Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Those are all in Coming up already.' }));
+        box.replaceWith(r.changes.length ? changesCard(r.changes, r.stepId) : Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Those are all added already.' }));
       } catch (e) { add.disabled = false; toast(e.message); }
     });
     $('.dt-skip', box).addEventListener('click', () => { box.innerHTML = '<p class="muted">Skipped. Nothing was added.</p>'; });

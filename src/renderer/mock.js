@@ -17,6 +17,15 @@
     files: i ? [] : [{ name: 'Chapter 12 slides.pptx', kind: 'pptx', text: 'x', note: '2 hidden slides skipped' }, { name: 'Chapter 13 slides.pptx', kind: 'pptx', text: 'x', note: '' }, { name: 'Course outline.pdf', kind: 'pdf', text: 'x', note: '' }],
     created: String(i), updated: '',
   }));
+  // ?many: a course with a term's worth of quizzes and tests, some already past.
+  if (q.has('many') && courses[0]) courses[0].upcoming = [
+    ...[3, 4, 5, 6, 7].map((n, i) => ({ id: 'q' + n, title: 'Quiz ' + n, date: `${year}-${['09-26', '10-10', '10-17', '10-24', '11-14'][i]}`, time: '', covers: '', done: false })),
+    { id: 't1', title: 'Test One', kind: 'exam', date: `${year}-10-15`, time: '', covers: 'Chapters 1, 2, 5', done: false },
+    ...[8, 9, 10, 11, 12].map((n, i) => ({ id: 'q' + n, title: 'Quiz ' + n, date: `${year}-${['11-28', '12-05', '12-12', '12-19', '12-22'][i]}`, time: '', covers: '', done: false })),
+    { id: 'a1', title: 'Case 1', date: `${year}-12-03`, time: '', covers: 'Chapter 8', done: false },
+    { id: 't2', title: 'Test Two', kind: 'exam', date: `${year}-12-02`, time: '14:00', covers: 'Chapters 6, 7, 8, 8A', done: false },
+    { id: 'fe', title: 'Final exam', date: `${year}-12-16`, time: '', covers: '', done: false },
+  ].sort((a, b) => a.date.localeCompare(b.date));
   let inbox = [];
   const usage = { fiveHour: { pct: 0.23, resetsAt: Date.now() + 2.2 * 3600e3 }, week: { pct: 0.41, resetsAt: Date.now() + 3 * 86400e3 } };
   const device = { id: 'dev-a', name: 'Jazzy MacBook Air' };
@@ -96,7 +105,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.4', guides, subjects: SUBJ, device: { ...device }, sync }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.5', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
