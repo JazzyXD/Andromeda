@@ -19,7 +19,7 @@
   }));
   // ?many: a course with a term's worth of quizzes and tests, some already past.
   if (q.has('many') && courses[0]) courses[0].upcoming = [
-    ...[3, 4, 5, 6, 7].map((n, i) => ({ id: 'q' + n, title: 'Quiz ' + n, date: `${year}-${['09-26', '10-10', '10-17', '10-24', '11-14'][i]}`, time: '', covers: '', done: false })),
+    ...[3, 4, 5, 6, 7].map((n, i) => ({ id: 'q' + n, title: 'Quiz ' + n, date: `${year}-${['09-26', '10-10', '10-17', '10-24', '11-14'][i]}`, time: '', covers: '', done: n !== 5 })),
     { id: 't1', title: 'Test One', kind: 'exam', date: `${year}-10-15`, time: '', covers: 'Chapters 1, 2, 5', done: false },
     ...[8, 9, 10, 11, 12].map((n, i) => ({ id: 'q' + n, title: 'Quiz ' + n, date: `${year}-${['11-28', '12-05', '12-12', '12-19', '12-22'][i]}`, time: '', covers: '', done: false })),
     { id: 'a1', title: 'Case 1', date: `${year}-12-03`, time: '', covers: 'Chapter 8', done: false },
@@ -105,7 +105,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.6', guides, subjects: SUBJ, device: { ...device }, sync }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.7', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
@@ -142,6 +142,7 @@
       return { changes: [{ course: pending.course, where: 'Courses', what: `Deleted ${pending.course}` }], stepId: 'def5678' };
     },
     undo: async () => ({ ok: true }),
+    setDone: async (courseId, id, done) => { const u = courses.find((c) => c.id === courseId).upcoming.find((x) => x.id === id); u.done = !!done; emit('data', { courses, inbox }); return true; },
     onData: (f) => listeners.data.push(f),
     pickFiles: async () => [], receive: async (paths) => { inbox = inbox.concat(paths.map((p) => p.split(/[\\/]/).pop())); emit('data', { courses, inbox }); return inbox; },
     attachTo: async () => ({ changes: [] }), clearInbox: async () => { inbox = []; emit('data', { courses, inbox }); },

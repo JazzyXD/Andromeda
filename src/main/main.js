@@ -338,6 +338,17 @@ const handlers = {
     backup();
     return { changes, stepId };
   },
+  // Ticking an assignment done (or un-ticking it) from the course page: no Claude needed.
+  'upcoming:done': async (_e, { courseId, id, done }) => {
+    await step(async () => {
+      const ch = await store.changeUpcoming(courseId, id, { done: !!done });
+      await store.commitNow(`${done ? 'Done' : 'Not done'}: ${ch[0] ? ch[0].what.split(',')[0] : 'an assignment'}`);
+    });
+    await store.writeSummary();
+    store.emit('changed');
+    backup();
+    return true;
+  },
   'undo': async (_e, stepId) => { const r = await store.undo(stepId); if (r.ok) backup(); return r; },
   'files:pick': async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Slides and documents', extensions: ['pdf', 'pptx', 'ppt', 'docx', 'doc', 'xlsx', 'xls', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp'] }] });

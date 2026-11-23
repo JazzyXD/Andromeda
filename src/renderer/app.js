@@ -105,6 +105,7 @@
   // Exams show their scope and a Make a guide button; assignments are one line each.
   // Both lists sit in the same spot, so switching tabs never changes the card's height.
   S.cuTab = {}; S.cuOpen = {};
+  const TICK = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
   function renderComing(c) {
     const box = $('#cu');
     if (!box) return;
@@ -115,7 +116,7 @@
     const when = (u) => esc([prettyDate(u.date) || 'Date not set', prettyTime(u.time)].filter(Boolean).join(' · '));
     const row = (u, k, past) => k === 'exam'
       ? `<div class="cu-row${past ? ' done' : ''}"><span class="cu-dot"></span><div class="cu-main"><b>${esc(u.title)}</b><span${u.covers ? ` title="${esc(u.covers)}"` : ''}>${esc(u.covers || (past ? (u.done ? 'Done' : 'Past') : 'Scope not set yet'))}</span></div>${past ? '' : `<button type="button" class="pill-btn mg" data-test="${esc(u.id)}" title="Plan a learning guide for ${esc(u.title)}">Make a guide</button>`}<span class="cu-when">${when(u)}</span></div>`
-      : `<div class="cu-row one${past ? ' done' : ''}"><span class="cu-dot"></span><div class="cu-main"><b>${esc(u.title)}${u.covers ? ` <span>${esc(u.covers)}</span>` : ''}</b></div><span class="cu-when">${when(u)}</span></div>`;
+      : `<div class="cu-row one${u.done ? ' is-done' : past ? ' done' : ''}${past ? ' past' : ''}" data-id="${esc(u.id)}"><button type="button" class="cu-tick" title="${u.done ? 'Mark not done' : 'Mark done'}" aria-label="${u.done ? 'Mark ' + esc(u.title) + ' not done' : 'Mark ' + esc(u.title) + ' done'}" aria-pressed="${!!u.done}"><i>${u.done ? TICK : ''}</i></button><div class="cu-main"><b>${esc(u.title)}${u.covers ? ` <span>${esc(u.covers)}</span>` : ''}</b></div><span class="cu-when">${when(u)}</span></div>`;
     const list = (k) => {
       const open = S.cuOpen[c.id + k] || {}, next = ahead(k), past = lists[k].filter(isPast);
       const shown = open.all ? next : next.slice(0, 4);
@@ -123,10 +124,15 @@
       return `<div class="cu-list" data-k="${k}"${k === tab ? '' : ' aria-hidden="true" inert'}>
         ${shown.map((u) => row(u, k, false)).join('') || `<p class="muted">${lists[k].length ? 'Nothing ahead.' : empty}</p>`}
         ${next.length > 4 ? `<button type="button" class="cu-more" data-more="all">${open.all ? 'Show fewer' : `Show all ${next.length}`}</button>` : ''}
-        ${past.length ? `<button type="button" class="cu-more" data-more="past" aria-expanded="${!!open.past}">${past.length} past</button>${open.past ? past.map((u) => row(u, k, true)).join('') : ''}` : ''}
+        ${past.length ? `<button type="button" class="cu-more" data-more="past" aria-expanded="${!!open.past}">${foldLabel(past)}</button>${open.past ? past.map((u) => row(u, k, true)).join('') : ''}` : ''}
       </div>`;
     };
     const count = (k) => (ahead(k).length ? ` <small>${ahead(k).length}</small>` : '');
+    // "5 done", "3 past", or "4 done · 2 past" when it's a mix.
+    function foldLabel(items) {
+      const d = items.filter((u) => u.done).length, p = items.length - d;
+      return [d ? `${d} done` : '', p ? `${p} past` : ''].filter(Boolean).join(' · ');
+    }
     box.innerHTML = `<div class="seg cu-tabs" role="tablist"><button type="button" role="tab" data-tab="exam" aria-pressed="${tab === 'exam'}">Exams${count('exam')}</button><button type="button" role="tab" data-tab="assignment" aria-pressed="${tab === 'assignment'}">Assignments${count('assignment')}</button></div>
       <div class="cu-lists">${list('exam')}${list('assignment')}</div>`;
     $$('[data-tab]', box).forEach((b) => b.addEventListener('click', () => {
@@ -142,6 +148,18 @@
       renderComing(c);
     }));
     $$('.mg', box).forEach((b) => b.addEventListener('click', () => openPlan({ courseId: c.id, testId: b.dataset.test })));
+    // Ticking an assignment: no Claude, saved straight away. One still ahead shows its tick, then
+    // slides into the folded list; in the folded list, a click just flips it back.
+    $$('.cu-tick', box).forEach((b) => b.addEventListener('click', () => {
+      const r = b.closest('.cu-row'), id = r.dataset.id, it = all.find((u) => u.id === id);
+      if (!it || b.disabled) return;
+      const done = !it.done, save = () => api.setDone(c.id, id, done).catch((e) => toast(e.message));
+      b.disabled = true;
+      if (!done || r.classList.contains('past')) { save(); return; }
+      r.classList.add('is-done'); $('i', b).innerHTML = TICK;
+      if (reduced()) { save(); return; }
+      setTimeout(() => { r.classList.add('leaving'); setTimeout(save, 340); }, 850);
+    }));
   }
 
   // ---------- one course ----------
