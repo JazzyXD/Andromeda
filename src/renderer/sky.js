@@ -253,6 +253,41 @@
     return { canvas: soft, scale: S, turn: BW };
   }
 
+  // Galaxies far behind the stars. None sit in the Milky Way's path: in the real sky its dust hides
+  // whatever lies behind it. Andromeda's galaxy sits beside the Andromeda constellation, as it really does.
+  const GALAXIES = [];
+  {
+    const r = rng(4242), line = bandSamples(30);
+    const bandDist = (x, y) => { let best = Infinity; for (const [bx, by] of line) { let dx = Math.abs(x - bx) % PERIOD; dx = Math.min(dx, PERIOD - dx); if (dx < best) best = Math.min(best, Math.hypot(dx, y - by)); } return best; };
+    const boxes = Object.values(CONSTELLATIONS).map((c) => { const xs = c.world.map((p) => p[0]), ys = c.world.map((p) => p[1]); return [Math.min(...xs) - 60, Math.min(...ys) - 60, Math.max(...xs) + 60, Math.max(...ys) + 60]; });
+    const inBox = (x, y, s) => boxes.some((b) => [-PERIOD, 0, PERIOD].some((sh) => x + s > b[0] + sh && x - s < b[2] + sh && y + s > b[1] && y - s < b[3]));
+    const far = (x, y, d) => GALAXIES.every((g) => { let dx = Math.abs(g.x - x) % PERIOD; dx = Math.min(dx, PERIOD - dx); return Math.hypot(dx, g.y - y) > d; });
+    const A = CONSTELLATIONS['con:andromeda'];
+    if (A) {
+      const xs = A.world.map((p) => p[0]), ys = A.world.map((p) => p[1]);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const up = bandDist(cx, Math.min(...ys) - 200) > bandDist(cx, Math.max(...ys) + 200);
+      GALAXIES.push({ type: 'andromeda', seed: 31, x: cx + 60, y: up ? Math.min(...ys) - 150 : Math.max(...ys) + 150, size: 100, pa: 145, incl: 77 });
+    }
+    // Ursa Major's part of the real sky is full of galaxies: Bode's Galaxy (M81) with the Cigar (M82)
+    // beside it, and the Pinwheel (M101) by the end of the Big Dipper's handle.
+    if (CONSTELLATIONS.ursaMajor) {
+      GALAXIES.push({ type: 'tight', seed: 81, x: 1000, y: 1420, size: 26, pa: 150, incl: 58 });
+      GALAXIES.push({ type: 'edgeon', seed: 82, x: 1075, y: 1370, size: 16, pa: 30, incl: 82 });
+      GALAXIES.push({ type: 'spiral', seed: 101, x: 1370, y: 1430, size: 24, pa: 10, incl: 15 });
+    }
+    const TYPES = ['spiral', 'elliptical', 'edgeon', 'lenticular', 'irregular', 'tight', 'elliptical', 'spiral', 'sombrero', 'pair', 'edgeon', 'elliptical', 'spiral', 'irregular', 'tight', 'lenticular'];
+    // Mostly in the dark sky within reach of the views (up to about 1100px from the band).
+    for (let tries = 0; GALAXIES.length < 52 && tries < 20000; tries++) {
+      const [bx, by] = line[Math.floor(r() * line.length)];
+      const x = bx + (r() - 0.5) * 300, y = by + (r() < 0.5 ? -1 : 1) * (380 + r() * 760);
+      const k = r(), size = k < 0.6 ? 8 + r() * 9 : k < 0.9 ? 17 + r() * 13 : 32 + r() * 22;
+      if (bandDist(x, y) < 380 + size || inBox(x, y, size) || !far(x, y, 380)) continue;
+      const n = GALAXIES.length;
+      GALAXIES.push({ type: TYPES[n % TYPES.length], seed: 100 + n, x, y, size, pa: Math.round(r() * 180), incl: null });
+    }
+  }
+
   // ---------- the sky object ----------
   function createSky(canvas, opts) {
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -411,6 +446,24 @@
       });
     }
 
+    // Galaxies: small, faint and far behind everything, drawn once each and reused. They don't twinkle,
+    // and they're the first thing a brighter sky hides.
+    function drawGalaxies(g, camL, d) {
+      if (!window.AndromedaGalaxies) return;
+      const share = Math.pow(clamp((d - 0.3) / 0.5, 0, 1), 1.3);
+      if (share <= 0) return;
+      const ox = W / 2 - camL[0] + mouse[0] * 5, oy = H / 2 - camL[1] + mouse[1] * 4;
+      g.globalAlpha = alpha * share * 0.65;
+      for (const gx of GALAXIES) {
+        const s = gx.size;
+        let x = gx.x + ox; x -= PERIOD * Math.floor((x + s) / PERIOD);
+        const y = gx.y + oy;
+        if (x - s > W || y + s < 0 || y - s > H) continue;
+        g.drawImage(window.AndromedaGalaxies.sprite(gx, s * 2 * dpr), x - s, y - s, s * 2, s * 2);
+      }
+      g.globalAlpha = 1;
+    }
+
     function frame(now) {
       requestAnimationFrame(frame);
       const rm = reduce();
@@ -476,6 +529,7 @@
         if (sx < 0) sx += T;
         g.drawImage(band.canvas, sx, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
         g.globalAlpha = 1;
+        drawGalaxies(g, cB, d);
         drawStars(g, stars.faint, cF, 0.55, now, 0, faintShare(d), 1);
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
