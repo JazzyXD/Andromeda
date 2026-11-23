@@ -191,7 +191,8 @@ img, svg { -webkit-user-drag: none; }
 .icon-btn:hover { background: rgba(233, 236, 245, 0.06); color: var(--soft); }
 .send {
   flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
-  border-radius: 14px; border: 1px solid rgba(233, 236, 245, 0.18); background: var(--accent); color: #fff;
+  border-radius: 14px; border: 0; background: var(--accent); color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(233, 236, 245, 0.18); /* outline drawn inside, so no fringe on the corners */
   transition: transform 0.25s var(--spring), filter 0.2s;
 }
 .send:hover { filter: brightness(1.12); }
@@ -236,14 +237,15 @@ img, svg { -webkit-user-drag: none; }
 .warn { color: #E8B48A; font-size: 13px; margin-top: 8px !important; }
 code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.92em; padding: 1px 6px; border-radius: 6px; background: rgba(233, 236, 245, 0.08); }
 .btn {
-  min-height: 38px; padding: 0 16px; border-radius: 11px; border: 1px solid rgba(233, 236, 245, 0.18);
+  min-height: 38px; padding: 0 16px; border-radius: 11px; border: 0;
   background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(233, 236, 245, 0.18);
   transition: filter .2s, transform .25s var(--spring);
 }
 .btn:hover { filter: brightness(1.1); }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; filter: none; }
-.btn.ghost { background: rgba(233, 236, 245, 0.05); color: var(--soft); border-color: rgba(233, 236, 245, 0.16); font-weight: 500; }
+.btn.ghost { background: rgba(233, 236, 245, 0.05); color: var(--soft); box-shadow: inset 0 0 0 1px rgba(233, 236, 245, 0.16); font-weight: 500; }
 .btn.danger { background: linear-gradient(135deg, rgba(196, 106, 143, .9), rgba(160, 70, 90, .9)); }
 .pill-btn { min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(233, 236, 245, 0.16); background: transparent; font-size: 12.5px; color: var(--soft); }
 .pill-btn:hover { border-color: rgba(233, 236, 245, 0.3); }
@@ -406,3 +408,6 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .offer div { display: flex; flex-direction: column; gap: 2px; }
 .offer b { font-size: 14px; }
 .offer span { font-size: 12.5px; color: var(--faint); }
+
+/* Fills stop at the inside of a border, so see-through borders never blend with the fill at the corners. */
+.card, .gcard, .panel, .prompt, .tabs, .convo, .glass, .changes, .confirm, .dates, .offer, .you, .chip-file, .ctx, .pill-btn, .mm-row button, .seg, .code, .setup-card { background-clip: padding-box; }
