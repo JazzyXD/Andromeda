@@ -51,7 +51,7 @@
     out({ type: 'usage', usage: { ...usage, fiveHour: { ...usage.fiveHour, pct: 0.25 } } });
     const reply = 'Done. The final is on Income Tax 2 now, covering chapter 15 onward.';
     for (const w of reply.split(/(?<= )/)) { out({ type: 'text', delta: w }); await sleep(30); }
-    out({ type: 'done', ok: true, text: reply, changes, pending: [], stepId: 'abc1234', sessionId: 's' });
+    out({ type: 'done', ok: true, text: reply, changes, pending: [], stepId: 'abc1234', sessionId: 's', tokens: { input: 12, output: 96, cacheRead: 1840, cacheWrite: 310 } });
   }
 
   window.andromeda = {

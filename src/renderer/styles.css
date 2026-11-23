@@ -364,3 +364,5 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .code { margin-top: 12px; display: inline-block; padding: 10px 18px; border-radius: 12px; font: 700 26px/1 ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: .14em; color: var(--starlight); background: rgba(5, 6, 15, .5); border: 1px solid rgba(233, 236, 245, .16); user-select: all; -webkit-user-select: all; }
 .waiting { font-size: 13px; }
 .s-foot { display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid rgba(233, 236, 245, .08); }
+
+.tok { align-self: flex-end; margin-top: -2px; font-size: 11px; color: rgba(154, 165, 196, 0.55); font-variant-numeric: tabular-nums; letter-spacing: .02em; }

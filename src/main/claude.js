@@ -82,7 +82,7 @@ class ClaudeRunner {
   }
 
   // emit(event) is called for everything the window shows.
-  async run({ prompt, model = 'sonnet', effort = 'medium', sessionId = null }, emit) {
+  async run({ prompt, model = 'sonnet', effort = 'low', sessionId = null }, emit) {
     if (this.active) return emit({ type: 'done', ok: false, error: { code: 'busy', message: 'Claude is still working on the last prompt.' } });
     const file = await bin.find('claude');
     if (!file) return emit({ type: 'done', ok: false, error: { code: 'install', message: 'Claude Code isn\'t installed on this laptop.' } });
@@ -182,10 +182,10 @@ class ClaudeRunner {
       const failed = !this.resultOk;
       emit({
         type: 'done', ok: !failed, runId, sessionId: session, text, refused, stepId,
-        changes: run.changes, pending: run.pending,
+        changes: run.changes, pending: run.pending, tokens: this.tokens || null,
         error: failed ? friendlyError(this.resultText || errText || `exit ${code}`) : null,
       });
-      this.resultOk = false; this.resultText = '';
+      this.resultOk = false; this.resultText = ''; this.tokens = null;
     });
   }
 
@@ -237,6 +237,12 @@ class ClaudeRunner {
       return;
     }
     if (m.type === 'result') {
+      // Exact token counts for this prompt, shown quietly under the reply.
+      const u = m.usage || {};
+      this.tokens = {
+        input: u.input_tokens || 0, output: u.output_tokens || 0,
+        cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0,
+      };
       this.resultOk = !m.is_error && m.subtype !== 'error_during_execution';
       this.resultText = m.is_error ? String(m.result || m.subtype || '') : '';
       if (m.subtype === 'error_max_turns') { this.resultOk = true; h.emit({ type: 'warn', message: 'Stopped after 40 steps.' }); }

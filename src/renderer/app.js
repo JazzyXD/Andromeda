@@ -211,7 +211,7 @@
         <h2>Claude</h2>
         <p>${cl.installed ? `Claude Code ${esc(cl.version || '')} is set up on this laptop. Prompts use your own Claude plan.` : 'Claude Code isn\'t installed on this laptop yet.'}</p>
         ${cl.apiKey ? '<p class="warn">An API key is set on this laptop. Andromeda ignores it so prompts use your Pro plan, but other apps may bill it.</p>' : ''}
-        <div class="row"><span class="pill">Course prompts default to Sonnet at medium effort. Change it under the prompt box.</span></div>
+        <div class="row"><span class="pill">Course prompts default to Sonnet at low effort. Change it under the prompt box.</span></div>
       </div>
       <div class="panel m">
         <h2>GitHub backup</h2>
@@ -527,6 +527,16 @@
       reply.textContent = ev.text;
     }
     if (ev.ok && ev.changes && ev.changes.length) extras.prepend(changesCard(ev.changes, ev.stepId));
+    // A quiet note of what this prompt used. "Reused" is text Claude had seen recently, which counts for much less.
+    if (ev.tokens) {
+      const t = ev.tokens, k = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n));
+      const fresh = t.input + t.cacheWrite + t.output, reused = t.cacheRead;
+      const note = document.createElement('div');
+      note.className = 'tok';
+      note.title = `New input ${t.input + t.cacheWrite}, reply ${t.output}, reused ${reused}`;
+      note.textContent = `${k(fresh)} tokens${reused ? ` · ${k(reused)} reused` : ''}`;
+      turn.el.querySelector('.ai').appendChild(note);
+    }
     if (ev.sessionId) session = ev.sessionId;
     turn = null;
     scrollLog();
@@ -571,7 +581,7 @@
   // ---------- model and effort ----------
   const MODELS = [['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
   const EFFORT = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'X-High'], ['max', 'Max']];
-  let choice = local.get('model2', { model: 'sonnet', effort: 'medium' });
+  let choice = local.get('model3', { model: 'sonnet', effort: 'low' });
   const label = (list, v) => (list.find((x) => x[0] === v) || list[0])[1];
   function renderModel() {
     $('#model').textContent = `${label(MODELS, choice.model)} · ${label(EFFORT, choice.effort)}`;
@@ -593,7 +603,7 @@
     if (!b) return;
     if (b.dataset.model) choice.model = b.dataset.model;
     if (b.dataset.effort) choice.effort = b.dataset.effort;
-    local.set('model2', choice);
+    local.set('model3', choice);
     renderModel();
   });
   document.addEventListener('click', () => openMenu(false));
