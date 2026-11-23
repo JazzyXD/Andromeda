@@ -102,9 +102,11 @@ function mergeGuide(b, o, t) {
 }
 
 // ---------- the sync itself ----------
+const AUTH = /authentication failed|could not read username|terminal prompts disabled|invalid username or password|\b401\b|\b403\b|access denied/i;
 class Sync extends EventEmitter {
-  constructor({ store, net, canSync, device, busy = () => false }) {
+  constructor({ store, net, canSync, device, busy = () => false, signInFailed = async () => false }) {
     super();
+    this.signInFailed = signInFailed; // checks with GitHub; true if the sign-in is really gone
     this.busy = busy; // true while Claude is part-way through changing a course
     this.store = store;
     this.net = net; // runs a git command that talks to GitHub (with sign-in)
@@ -147,7 +149,11 @@ class Sync extends EventEmitter {
       const before = (await git(['rev-parse', 'HEAD'])).stdout.trim();
       for (let attempt = 0; attempt < 3; attempt++) {
         const f = await this.net(['fetch', '-q', 'origin']);
-        if (!f.ok) { this.set('offline', 'Saved on this laptop. Will sync when GitHub can be reached.'); return { changed: false }; }
+        if (!f.ok) {
+          if (AUTH.test(f.stderr) && (await this.signInFailed())) { this.set('off', 'GitHub sign-in stopped working. Reconnect GitHub in Settings.'); return { changed: false }; }
+          this.set('offline', 'Saved on this laptop. Will sync when GitHub can be reached.');
+          return { changed: false };
+        }
         const remote = await git(['rev-parse', '--verify', '-q', 'origin/main']);
         if (remote.ok && !(await git(['merge-base', '--is-ancestor', 'origin/main', 'HEAD'])).ok) {
           const m = await git(['merge', '-q', '--no-edit', '--allow-unrelated-histories', '-m', 'Combined with changes from the other laptop', 'origin/main']);

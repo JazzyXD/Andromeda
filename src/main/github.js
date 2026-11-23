@@ -18,7 +18,7 @@ class GitHub {
     this.token = null;
     this.login = null;
     this.repo = null;
-    this.cancelled = false;
+    this.attempt = 0; // each Connect press; an older one still waiting stops quietly
   }
 
   async load() {
@@ -36,7 +36,7 @@ class GitHub {
     await fsp.writeFile(this.file, safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(body) : body, { mode: 0o600 });
   }
 
-  state() { return { connected: !!this.token, login: this.login, repo: this.repo }; }
+  state() { return { connected: !!this.token, login: this.login, repo: this.repo, expired: !this.token && !!this.expired }; }
 
   api(p, opts = {}) {
     return fetch('https://api.github.com' + p, {
@@ -47,7 +47,7 @@ class GitHub {
 
   // Step 1: get a short code to show. Step 2 (wait) polls until the user approves it.
   async start() {
-    this.cancelled = false;
+    this.attempt++;
     const r = await fetch('https://github.com/login/device/code', {
       method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form({ client_id: CLIENT_ID, scope: 'repo' }),
@@ -59,12 +59,13 @@ class GitHub {
   }
 
   async wait() {
-    const j = this.pendingCode;
+    const j = this.pendingCode, mine = this.attempt;
     if (!j) throw new Error('No sign-in in progress.');
     let interval = (j.interval || 5) * 1000;
     const until = Date.now() + j.expires_in * 1000;
-    while (Date.now() < until && !this.cancelled) {
+    while (Date.now() < until && mine === this.attempt) {
       await sleep(interval);
+      if (mine !== this.attempt) break;
       const r = await fetch('https://github.com/login/oauth/access_token', {
         method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form({ client_id: CLIENT_ID, device_code: j.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }),
@@ -82,13 +83,28 @@ class GitHub {
       if (t.error === 'slow_down') interval += 5000;
       else if (t.error && t.error !== 'authorization_pending') throw new Error(t.error_description || t.error);
     }
-    throw new Error(this.cancelled ? 'Cancelled.' : 'The code expired. Try again.');
+    throw new Error(mine !== this.attempt ? 'Cancelled.' : 'The code expired. Try again.');
   }
 
-  cancel() { this.cancelled = true; }
+  cancel() { this.attempt++; }
 
   async disconnect() {
     this.token = this.login = this.repo = null;
+    await fsp.rm(this.file, { force: true });
+  }
+
+  // Is the saved sign-in still accepted? GitHub cancels old ones (it keeps 10 per app and account),
+  // and you can revoke them. Only a clear "no" counts; being offline doesn't.
+  async stillValid() {
+    if (!this.token) return false;
+    try { return (await this.api('/user')).status !== 401; } catch { return true; }
+  }
+
+  // The sign-in stopped working: forget the key (keeping which account and repo it was), so
+  // Settings asks to reconnect instead of every sync failing.
+  async expire() {
+    this.token = null;
+    this.expired = true;
     await fsp.rm(this.file, { force: true });
   }
 
@@ -98,7 +114,8 @@ class GitHub {
     return ['-c', `http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}`];
   }
 
-  async git(args) { return this.store.runGit([...this.gitAuth(), ...args]); }
+  // Talking to GitHub can take a while with big slides, so these get two minutes, not 15 seconds.
+  async git(args) { return this.store.runGit([...this.gitAuth(), ...args], { timeout: 120e3 }); }
 
   // Link the data folder to the repo. Makes the repo if it doesn't exist yet (private).
   async link() {

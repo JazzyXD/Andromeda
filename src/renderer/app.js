@@ -627,10 +627,10 @@
       </div>
       <div class="panel m">
         <h2>Sync and backup</h2>
-        <p>${gh.connected ? `Connected as @${esc(gh.login)}. Every change is saved to ${esc(gh.repo)}, and your other laptop picks it up within a couple of minutes. To set up a second laptop, install Andromeda there and connect the same GitHub account.` : 'Not connected. Your courses are only on this laptop.'}</p>
+        <p>${gh.connected ? `Connected as @${esc(gh.login)}. Every change is saved to ${esc(gh.repo)}, and your other laptop picks it up within a couple of minutes. To set up a second laptop, install Andromeda there and connect the same GitHub account.` : gh.expired ? `Your GitHub sign-in${gh.login ? ` for @${esc(gh.login)}` : ''} stopped working (GitHub cancels older sign-ins after a while). Your courses are safe on this laptop and on GitHub. Reconnect to keep syncing.` : 'Not connected. Your courses are only on this laptop.'}</p>
         ${gh.connected ? '<p class="sync-note" id="set-sync"></p>' : ''}
         <div class="row"><label class="pill" for="dev-name">This laptop</label><div class="sync-row"><input type="text" id="dev-name" maxlength="40" value="${esc((S.device && S.device.name) || '')}" placeholder="For example: school laptop" spellcheck="false"></div></div>
-        <div class="row"><span class="pill">${esc(S.dataDir)}</span><div style="display:flex;gap:8px">${gh.connected ? '<button type="button" class="btn ghost" id="sync-now">Sync now</button>' : '<button type="button" class="btn" id="gh-connect">Connect GitHub</button>'}<button type="button" class="btn ghost" id="open-data">Open data folder</button></div></div>
+        <div class="row"><span class="pill">${esc(S.dataDir)}</span><div style="display:flex;gap:8px">${gh.connected ? '<button type="button" class="btn ghost" id="sync-now">Sync now</button>' : `<button type="button" class="btn" id="gh-connect">${gh.expired ? 'Reconnect GitHub' : 'Connect GitHub'}</button>`}<button type="button" class="btn ghost" id="open-data">Open data folder</button></div></div>
       </div>
       <div class="panel m">
         <h2>About <span class="ver">v${esc(S.version || '')}</span></h2>
@@ -675,6 +675,7 @@
   };
   function syncLine() {
     const st = S.sync || { state: 'off' };
+    if (S.github && S.github.expired) return { dot: 'wait', text: 'Reconnect GitHub', title: 'Your GitHub sign-in stopped working. Click to reconnect in Settings.' };
     if (!S.github || !S.github.connected) return { dot: 'off', text: 'Saved on this laptop', title: 'Connect GitHub in Settings to sync your laptops' };
     if (st.state === 'syncing') return { dot: 'run', text: st.at ? `Synced ${ago(st.at)}` : 'Syncing…', title: 'Swapping changes with GitHub' };
     if (st.state === 'offline') return { dot: 'wait', text: 'Offline, saved here', title: st.message };
@@ -699,6 +700,11 @@
   }
   $('#sync').addEventListener('click', syncNow);
   api.onSync((st) => { S.sync = st; renderSync(); });
+  api.onGithub((gh) => {
+    S.github = gh;
+    renderSettings(); renderSync();
+    if (gh.expired) toast('GitHub sign-in stopped working. Reconnect it in Settings to keep syncing.');
+  });
   setInterval(renderSync, 30e3);
 
   // ---------- interface size ----------

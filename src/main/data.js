@@ -96,9 +96,12 @@ class DataStore extends EventEmitter {
   }
 
   // ---------- history ----------
-  runGit(args) {
+  // Git never asks for a password or opens a sign-in window (like Git Credential Manager's
+  // "Connect to GitHub" on Windows): Andromeda signs in itself, and a failed sign-in just fails.
+  runGit(args, opts = {}) {
     if (!this.git) return Promise.resolve({ ok: false, stdout: '', stderr: 'Git not found' });
-    return bin.run(this.git, ['-C', this.dir, '-c', 'user.name=Andromeda', '-c', 'user.email=andromeda@localhost', ...args]);
+    return bin.run(this.git, ['-C', this.dir, '-c', 'user.name=Andromeda', '-c', 'user.email=andromeda@localhost', '-c', 'credential.helper=', ...args],
+      { env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_ASKPASS: '', SSH_ASKPASS: '' }, ...opts });
   }
 
   // Save everything changed since the last save as one step. Returns its id, or null if nothing changed.

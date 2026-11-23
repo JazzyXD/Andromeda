@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('andromeda', {
   githubCancel: () => call('github:cancel'),
   githubRetry: () => call('github:retryLink'),
   syncNow: () => call('sync:now'),
+  onGithub: on('github:changed'),
   onSync: on('sync'),
   renameDevice: (name) => call('device:rename', name),
   zoomGet: () => call('zoom:get'),

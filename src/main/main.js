@@ -239,7 +239,17 @@ async function setupServices() {
   github = new GitHub(app.getPath('userData'), store);
   await github.load();
   // Two-laptop sync: download the other laptop's changes, combine, upload (see sync.js).
-  sync = new Sync({ store, device, net: (a) => github.git(a), canSync: () => github.linked(), busy: () => !!(runner && runner.active) });
+  sync = new Sync({
+    store, device, net: (a) => github.git(a), busy: () => !!(runner && runner.active),
+    // Signed in but not linked yet (the first link hiccupped): try linking again.
+    canSync: async () => { if (!github.token) return false; if (!(await github.linked())) await github.link().catch(() => {}); return github.linked(); },
+    signInFailed: async () => {
+      if (await github.stillValid()) return false;
+      await github.expire();
+      toWin('github:changed', github.state());
+      return true;
+    },
+  });
   sync.on('state', (st) => toWin('sync', st));
   sync.on('pulled', () => { guides.emit('changed', null); builder.afterPull().catch(() => {}); });
   // Guides build on their own Claude Code run, so the course chat stays free meanwhile.
@@ -414,7 +424,8 @@ const handlers = {
   },
   'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
   'github:start': () => github.start(),
-  'github:wait': async () => { await github.wait(); return linkAndSync(); },
+  // Signed in counts as connected even if the first link to the repo hiccups; the next sync retries it.
+  'github:wait': async () => { await github.wait(); await linkAndSync().catch(() => {}); return github.state(); },
   'github:cancel': () => github.cancel(),
   'github:retryLink': () => linkAndSync(),
   'sync:now': async () => { await sync.now(); return sync.state; },
