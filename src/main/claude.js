@@ -85,7 +85,7 @@ class ClaudeRunner {
   }
 
   // emit(event) is called for everything the window shows.
-  // Find dates: always Sonnet at low effort, started only by the user clicking the button.
+  // Find dates: always Sonnet at medium effort, started only by the user clicking the button.
   async findDates({ courseId, file }, emit) {
     const c = await this.store.findCourse(courseId);
     const f = c.files.find((x) => x.name === file);
@@ -98,7 +98,7 @@ ${f.text ? `Read the document's text at ${f.text}. If a table on a page looks sc
 Find every test, quiz, exam, assignment, project, presentation or other deadline. For each give: a short title ("Midterm", "Assignment 1"); the date as YYYY-MM-DD when the document gives or clearly implies it, with the year from the term; the time as 24-hour HH:MM if given; what it covers if stated; the exact quote it came from and its page.
 List items with no date too, with the date left out. Never invent a date the document doesn't support.
 Call propose_dates exactly once with everything, then reply with one short line.`;
-    return this.run({ prompt: `Find the dates in ${f.name}.`, model: 'sonnet', effort: 'low', mode: 'dates', system, label: f.name }, emit);
+    return this.run({ prompt: `Find the dates in ${f.name}.`, model: 'sonnet', effort: 'medium', mode: 'dates', system, label: f.name }, emit);
   }
 
   async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null, mode = 'course', system: customSystem = null }, emit) {

@@ -465,30 +465,90 @@
     catch (err) { finishTurn({ ok: false, error: { message: err.message } }); }
   }
 
+  // The checklist: tick what's right, click a name or date to fix it, add any others.
+  const PENCIL = '<svg class="pen" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
   function datesCard(job, items) {
     const c = courseById(job.courseId);
     const box = document.createElement('div');
     box.className = 'dates';
-    if (!items.length) { box.innerHTML = `<p class="muted">No dates found in ${esc(job.file)}.</p>`; return box; }
     const has = (it) => !!(c && (c.upcoming || []).some((u) => u.title.toLowerCase() === it.title.toLowerCase() && (u.date || '') === (it.date || '')));
-    box.innerHTML = `<div class="dt-head"><span>Found ${items.length} date${items.length === 1 ? '' : 's'} in ${esc(job.file)}</span></div>
-      <p class="dt-sub">Untick anything that's wrong, then add the rest to Coming up.</p>
-      ${items.map((it, i) => `<label class="dt-row${has(it) ? ' dup' : ''}">
-        <input type="checkbox" data-i="${i}" ${has(it) ? '' : 'checked'}>
-        <span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
-        <span class="dt-main"><span class="dt-line"><b>${esc(it.title)}</b><span class="dt-when">${esc([prettyDate(it.date) || 'No date in the document', prettyTime(it.time)].filter(Boolean).join(' · '))}</span></span>
-          ${it.covers ? `<span class="dt-covers">${esc(it.covers)}</span>` : ''}
-          <span class="dt-quote">“${esc(it.quote)}”${it.page ? ` · page ${esc(it.page)}` : ''}${has(it) ? ' · already in Coming up' : ''}</span></span>
-      </label>`).join('')}
+    const rows = items.map((it) => ({ ...it, on: !has(it), dup: has(it), edited: false }));
+    let editing = null; // { i, field }
+
+    box.innerHTML = `<div class="dt-head"><span>${items.length ? `Found ${items.length} date${items.length === 1 ? '' : 's'} in ${esc(job.file)}` : `No dates found in ${esc(job.file)}`}</span></div>
+      <p class="dt-sub">${items.length ? 'Click a name or date to fix it, untick anything that doesn\'t belong, and add any others.' : 'You can still add your own.'}</p>
+      <div class="dt-rows"></div>
+      <button type="button" class="dt-more">+ Add a date</button>
       <div class="dt-foot"><button type="button" class="btn dt-add"></button><button type="button" class="btn ghost dt-skip">Skip</button></div>`;
-    const boxes = $$('input[type=checkbox]', box), add = $('.dt-add', box);
-    const count = () => { const n = boxes.filter((b) => b.checked).length; add.textContent = n ? `Add ${n} to Coming up` : 'Nothing ticked'; add.disabled = !n; };
-    boxes.forEach((b) => b.addEventListener('change', count));
-    count();
+    const list = $('.dt-rows', box), add = $('.dt-add', box);
+
+    const when = (r) => [prettyDate(r.date) || 'No date', prettyTime(r.time)].filter(Boolean).join(' · ');
+    function render() {
+      list.innerHTML = rows.map((r, i) => {
+        const titleField = editing && editing.i === i && editing.field === 'title'
+          ? `<input class="ed-input ed-title-in" value="${esc(r.title)}" placeholder="Name, like Assignment 2" aria-label="Name">`
+          : `<button type="button" class="ed ed-title" data-i="${i}" data-f="title" aria-label="Edit name: ${esc(r.title || 'no name yet')}">${esc(r.title || 'Add a name')}${PENCIL}</button>`;
+        const dateField = editing && editing.i === i && editing.field === 'date'
+          ? `<span class="ed-when-in"><input type="date" class="ed-input ed-date-in" value="${esc(r.date)}" aria-label="Date"><input type="time" class="ed-input ed-time-in" value="${esc(r.time)}" aria-label="Time (optional)"><button type="button" class="pill-btn ed-done">Done</button></span>`
+          : `<button type="button" class="ed ed-date${r.date ? '' : ' empty'}" data-i="${i}" data-f="date" aria-label="Edit date: ${esc(when(r))}">${esc(when(r))}${PENCIL}</button>`;
+        const src = r.manual ? 'Added by you' : `“${esc(r.quote)}”${r.page ? ` · page ${esc(r.page)}` : ''}`;
+        const tags = [r.dup && !r.edited ? 'already in Coming up' : '', r.edited && !r.manual ? 'edited by you' : ''].filter(Boolean).join(' · ');
+        return `<div class="dt-row${r.on ? '' : ' off'}${r.dup ? ' dup' : ''}">
+          <label class="dt-check"><input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} aria-label="Include ${esc(r.title || 'this item')}"><span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></label>
+          <span class="dt-main"><span class="dt-line">${titleField}${dateField}</span>
+            ${r.covers ? `<span class="dt-covers">${esc(r.covers)}</span>` : ''}
+            <span class="dt-quote">${src}${tags ? ' · ' + tags : ''}</span></span>
+        </div>`;
+      }).join('');
+      const n = rows.filter((r) => r.on && r.title.trim()).length;
+      add.textContent = n ? `Add ${n} to Coming up` : 'Nothing ticked';
+      add.disabled = !n || !!editing;
+
+      $$('input[type=checkbox]', list).forEach((b) => b.addEventListener('change', () => { rows[+b.dataset.i].on = b.checked; render(); }));
+      $$('.ed', list).forEach((b) => b.addEventListener('click', () => { commit(); editing = { i: +b.dataset.i, field: b.dataset.f }; render(); }));
+      const ti = $('.ed-title-in', list);
+      if (ti) {
+        ti.focus(); ti.select();
+        ti.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); render(); } if (e.key === 'Escape') { editing = null; render(); } });
+        ti.addEventListener('blur', () => setTimeout(() => { if (editing && editing.field === 'title') { commit(); render(); } }, 120));
+      }
+      const di = $('.ed-date-in', list);
+      if (di) {
+        di.focus();
+        const wrap = di.parentElement;
+        wrap.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); render(); } if (e.key === 'Escape') { editing = null; render(); } });
+        $('.ed-done', wrap).addEventListener('click', () => { commit(); render(); });
+      }
+    }
+    // Save whatever field is open into the row.
+    function commit() {
+      if (!editing) return;
+      const r = rows[editing.i];
+      if (editing.field === 'title') {
+        const v = ($('.ed-title-in', list) || {}).value;
+        if (v != null && v.trim() && v.trim() !== r.title) { r.title = v.trim().slice(0, 80); r.edited = true; r.on = true; }
+      } else {
+        const d = ($('.ed-date-in', list) || {}).value || '', t = ($('.ed-time-in', list) || {}).value || '';
+        if (d !== r.date || t !== r.time) { r.date = d; r.time = t; r.edited = true; r.on = true; }
+      }
+      if (r.manual && !r.title.trim() && editing.field === 'title') { rows.splice(editing.i, 1); }
+      editing = null;
+    }
+    render();
+
+    $('.dt-more', box).addEventListener('click', () => {
+      commit();
+      rows.push({ title: '', date: '', time: '', covers: '', quote: '', page: null, on: true, manual: true, edited: false });
+      editing = { i: rows.length - 1, field: 'title' };
+      render();
+    });
     add.addEventListener('click', async () => {
+      commit();
+      const picked = rows.filter((r) => r.on && r.title.trim()).map(({ title, date, time, covers }) => ({ title, date, time, covers }));
+      if (!picked.length) return render();
       add.disabled = true;
       try {
-        const r = await api.addDates(job.courseId, boxes.filter((b) => b.checked).map((b) => items[+b.dataset.i]));
+        const r = await api.addDates(job.courseId, picked);
         box.replaceWith(r.changes.length ? changesCard(r.changes, r.stepId) : Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Those are all in Coming up already.' }));
       } catch (e) { add.disabled = false; toast(e.message); }
     });
@@ -499,7 +559,7 @@
   function offerCard(ev) {
     const box = document.createElement('div');
     box.className = 'offer';
-    box.innerHTML = `<div><b>Find dates in ${esc(ev.file)}</b><span>Runs once on Sonnet. You check every date before anything is added.</span></div><button type="button" class="btn">Find dates</button>`;
+    box.innerHTML = `<div><b>Find dates in ${esc(ev.file)}</b><span>Runs once on Sonnet. You check and fix every date before anything is added.</span></div><button type="button" class="btn">Find dates</button>`;
     $('.btn', box).addEventListener('click', () => { box.remove(); findDates(ev.courseId, ev.file); });
     return box;
   }
