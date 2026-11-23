@@ -185,6 +185,14 @@
     const step = S.guideStep[g.id];
     return { text: `Writing ${now ? now.label : 'the next part'}${step ? ' · ' + step : ''} · ${done} of ${pieces.length} parts`, frac, tone: 'run' };
   }
+  // What the quizzes say so far: the weeks to review first, or how many quizzes are done.
+  function resultsLine(g) {
+    const r = g.results || [], taken = r.filter((x) => x.n);
+    if (!taken.length) return '';
+    const review = taken.filter((x) => x.verdict === 'Review first');
+    if (review.length) return `<span class="gres warn">Review first: ${esc(review.map((x) => x.label).join(', '))}</span>`;
+    return `<span class="gres">${taken.length === r.length ? 'All quizzes on track' : `Quizzes done: ${taken.length} of ${r.length}, on track so far`}</span>`;
+  }
   const badgeArt = (g) => { const b = CON.GUIDE[g.badge] || Object.values(CON.GUIDE)[0]; return `<svg viewBox="0 0 64 64" width="44" height="44" aria-hidden="true">${conArt(b.p, b.e, 1.6, 3)}</svg>`; };
 
   // The prompt box steps aside where there's nothing to ask: Settings, the guide plan, and a guide being read.
@@ -200,6 +208,7 @@
       return `<button type="button" class="gcard m" data-guide="${esc(g.id)}">
         <div class="gtop">${badgeArt(g)}<div class="t"><small>${esc(g.courseName)}</small><b>${esc(g.title.replace(g.courseName + ': ', ''))}</b><span>${esc(g.weeks.map((w) => w.label).join(', '))}</span></div></div>
         <div class="bar-row"><span class="meter"><i style="width:${Math.round(st.frac * 100)}%;${st.tone === 'wait' ? 'background:var(--gold)' : st.tone === 'bad' ? 'background:#E8A07A' : ''}"></i></span><span>${esc(st.text)}</span></div>
+        ${resultsLine(g)}
       </button>`;
     }).join('');
     el.innerHTML = `<div class="inner">${head}
@@ -370,9 +379,13 @@
     $('#gr-info', v).innerHTML = `<b>${esc(g.title)}</b><span class="gr-st ${st.tone}">${esc(st.text)}</span>`;
     const act = $('#gr-act', v);
     const busy = ['building', 'planned', 'paused'].includes(g.status);
-    act.innerHTML = `${busy ? '<button type="button" class="pill-btn" id="gr-stop">Stop building</button>' : ''}${['stopped', 'failed'].includes(g.status) ? '<button type="button" class="pill-btn" id="gr-resume">Carry on building</button>' : ''}<button type="button" class="pill-btn" id="gr-del">Delete</button>`;
+    const any = (g.pieces || []).some((p) => p.status === 'done');
+    act.innerHTML = `${any ? '<button type="button" class="pill-btn" id="gr-save" title="A copy that opens in any browser, in the light version">Save as HTML</button><button type="button" class="pill-btn" id="gr-print" title="Print, or save as a PDF">Print</button>' : ''}${busy ? '<button type="button" class="pill-btn" id="gr-stop">Stop building</button>' : ''}${['stopped', 'failed'].includes(g.status) ? '<button type="button" class="pill-btn" id="gr-resume">Carry on building</button>' : ''}<button type="button" class="pill-btn" id="gr-del">Delete</button>`;
     const on = (sel, fn) => { const b = $(sel, act); if (b) b.addEventListener('click', fn); };
     on('#gr-stop', () => api.guideStop(g.id).catch((e) => toast(e.message)));
+    const standalone = async () => window.AndromedaGuidePage.page({ ...(await api.guideGet(g.id)), standalone: true });
+    on('#gr-save', async () => { try { const p = await api.guideExport(g.title, await standalone()); if (p) toast('Saved ' + p.split(/[\\/]/).pop()); } catch (e) { toast(e.message); } });
+    on('#gr-print', async () => { try { await api.guidePrint(g.title, await standalone()); } catch (e) { toast(e.message); } });
     on('#gr-resume', () => api.guideResume(g.id).catch((e) => toast(e.message)));
     on('#gr-del', () => {
       act.innerHTML = `<span class="muted">Delete this guide and its scores?</span><button type="button" class="btn danger" id="gr-yes">Delete</button><button type="button" class="btn ghost" id="gr-no">Keep it</button>`;
@@ -396,6 +409,8 @@
     if (e.data.andromeda === 'scroll' && typeof e.data.y === 'number') S.guideScroll[S.guide] = e.data.y;
   });
   api.onGuides((list) => {
+    const before = S.guide && S.guides.find((x) => x.id === S.guide), after = S.guide && list.find((x) => x.id === S.guide);
+    if (before && after && before.status !== after.status) setTimeout(loadGuide, 0);
     S.guides = list;
     if (S.view === 'guides' && !S.plan && !S.guide) renderGuides();
     if (S.guide) renderGuideBar();

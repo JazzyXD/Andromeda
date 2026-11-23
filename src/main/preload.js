@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('andromeda', {
   guideResume: (id) => call('guides:resume', id),
   guideDelete: (id) => call('guides:delete', id),
   guideProgress: (id, k, v) => call('guides:progress', { id, k, v }),
+  guideExport: (title, html) => call('guides:export', { title, html }),
+  guidePrint: (title, html) => call('guides:print', { title, html }),
   onGuides: on('guides:changed'),
   onGuidePart: on('guide:part'),
   onGuideStep: on('guide:step'),

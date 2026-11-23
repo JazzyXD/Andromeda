@@ -102,7 +102,11 @@ class GuideStore extends EventEmitter {
     const out = [];
     for (const d of dirs) {
       if (!d.isDirectory()) continue;
-      try { out.push(JSON.parse(await fsp.readFile(this.dir(d.name, 'guide.json'), 'utf8'))); } catch { /* skip */ }
+      try {
+        const g = JSON.parse(await fsp.readFile(this.dir(d.name, 'guide.json'), 'utf8'));
+        g.results = await this.results(g);
+        out.push(g);
+      } catch { /* skip */ }
     }
     return out.sort((a, b) => String(b.created).localeCompare(String(a.created)));
   }
@@ -163,12 +167,25 @@ class GuideStore extends EventEmitter {
     await fsp.writeFile(this.dir(id, 'parts', pieceId + '.html'), html);
   }
 
+  // The latest first-try score and confidence for each week quiz and the final quiz, with the same
+  // verdict the guide's score screen gives. For the guide cards; not saved into guide.json.
+  async results(g) {
+    let p = {};
+    try { p = JSON.parse(await fsp.readFile(this.dir(g.id, 'progress.json'), 'utf8')); } catch { return []; }
+    const verdict = (v) => (v.c > 3 && v.s / v.n < 0.7 ? 'Review first' : v.c && v.c < 3 && v.s / v.n >= 0.8 ? 'Better than you thought' : 'On track');
+    return g.pieces.filter((x) => /^w\d+$/.test(x.id) || x.id === 'finish').map((x) => {
+      const v = p['q:' + (x.id === 'finish' ? 'final' : x.id) + '-quiz'];
+      return v && v.n ? { piece: x.id, label: x.label, s: v.s, n: v.n, c: v.c || null, verdict: verdict(v) } : { piece: x.id, label: x.label };
+    });
+  }
+
   async saveProgress(id, key, value) {
     const file = this.dir(id, 'progress.json');
     let p = {};
     try { p = JSON.parse(await fsp.readFile(file, 'utf8')); } catch { /* new */ }
     p[String(key).slice(0, 80)] = value;
     await fsp.writeFile(file, JSON.stringify(p));
+    if (/^q:/.test(key)) this.emit('changed', null); // a quiz finished: the guide cards show results
   }
 
   async remove(id) {
@@ -271,7 +288,7 @@ class GuideBuilder {
         const { guide: g, parts } = await this.guides.get(id);
         if (g.status === 'stopped') break;
         const piece = g.pieces.find((p) => p.status !== 'done');
-        if (!piece) { g.status = 'done'; g.pausedUntil = null; await this.guides.save(g); break; }
+        if (!piece) { g.status = 'done'; g.pausedUntil = null; await this.guides.save(g); this.events.emit('finished', g); break; }
         g.status = 'building'; g.pausedUntil = null; piece.status = 'building'; piece.error = '';
         await this.guides.save(g);
         const r = await this.runPiece(g, piece, parts);
@@ -298,6 +315,7 @@ class GuideBuilder {
           fp.tries = (fp.tries || 0) + 1;
           fresh.status = fp.tries >= 2 ? 'failed' : 'building';
           await this.guides.save(fresh);
+          if (fresh.status === 'failed') this.events.emit('finished', fresh);
           if (fp.tries < 2) continue;
         }
         break;

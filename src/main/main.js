@@ -244,6 +244,11 @@ async function setupServices() {
   builder = new GuideBuilder({ guides, store, runner: guideRunner, getUsage: () => usage, onCommit: () => backup() });
   guides.on('changed', async () => toWin('guides:changed', await guides.list()));
   builder.events.on('part', (p) => toWin('guide:part', p));
+  // A note from the system when a guide is ready (or gets stuck) while you're in another window.
+  builder.events.on('finished', (g) => {
+    if (!Notification.isSupported() || (win && !win.isDestroyed() && win.isFocused())) return;
+    new Notification({ title: g.status === 'done' ? 'Your guide is ready' : 'A guide couldn\'t finish', body: g.title }).show();
+  });
   builder.events.on('claude', ({ id, piece, ev }) => { if (ev.type === 'step' && ev.step.state === 'running') toWin('guide:step', { id, piece, label: ev.step.label }); if (ev.type === 'usage') toWin('usage', ev.usage); });
   github = new GitHub(app.getPath('userData'), store);
   await github.load();
@@ -330,6 +335,23 @@ const handlers = {
   'guides:stop': (_e, id) => builder.stop(id),
   'guides:resume': (_e, id) => { builder.resume(id).catch(() => {}); return true; },
   'guides:delete': async (_e, id) => { await builder.stop(id).catch(() => {}); await guides.remove(id); backup(); return true; },
+  // Save a guide as its own web page (light, works in any browser), or print it (or save it as a PDF).
+  'guides:export': async (_e, { title, html }) => {
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), String(title).replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.html'), filters: [{ name: 'Web page', extensions: ['html'] }] });
+    if (r.canceled || !r.filePath) return null;
+    await fs.promises.writeFile(r.filePath, html);
+    return r.filePath;
+  },
+  'guides:print': async (_e, { title, html }) => {
+    const file = path.join(app.getPath('temp'), `andromeda-print-${Date.now()}.html`);
+    await fs.promises.writeFile(file, html);
+    const pw = new BrowserWindow({ show: false, title, webPreferences: { sandbox: true, javascript: true } });
+    await pw.loadFile(file);
+    await new Promise((resolve) => pw.webContents.print({ printBackground: false }, () => resolve()));
+    pw.destroy();
+    fs.promises.rm(file, { force: true }).catch(() => {});
+    return true;
+  },
   'guides:progress': async (_e, { id, k, v }) => { await guides.saveProgress(id, k, v); progressDirty(); return true; },
   'zoom:get': () => zoomInfo(),
   'zoom:set': (_e, mode) => setZoom(mode),
