@@ -98,7 +98,7 @@ class ClaudeRunner {
     const system = `You find dates in one course document for Andromeda, a study app.
 Course: ${c.name}. Term: ${c.term || `not set; today is ${today}, so assume the current or next school term`}.
 ${f.text ? `Read the document's text at ${f.text}. If a table on a page looks scrambled, Read that page of the original at ${orig} (use pages).` : `Read the original at ${orig}.`}
-Find every test, quiz, exam, assignment, project, presentation or other deadline. For each give: a short title ("Midterm", "Assignment 1"); the date as YYYY-MM-DD when the document gives or clearly implies it, with the year from the term; the time as 24-hour HH:MM if given; what it covers if stated; the exact quote it came from and its page.
+Find every test, quiz, exam, assignment, project, presentation or other deadline. For each give: a short title ("Midterm", "Assignment 1"); the date as YYYY-MM-DD when the document gives or clearly implies it, with the year from the term; the time as 24-hour HH:MM if given; what it covers if stated; the exact quote it came from.
 List items with no date too, with the date left out. Never invent a date the document doesn't support.
 Call propose_dates exactly once with everything, then reply with one short line.`;
     return this.run({ prompt: `Find the dates in ${f.name}.`, model: 'sonnet', effort: 'medium', mode: 'dates', system, label: f.name }, emit);

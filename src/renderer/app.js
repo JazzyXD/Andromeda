@@ -880,7 +880,7 @@
         const dateField = editing && editing.i === i && editing.field === 'date'
           ? `<span class="ed-when-in"><input type="date" class="ed-input ed-date-in" value="${esc(r.date)}" aria-label="Date"><input type="time" class="ed-input ed-time-in" value="${esc(r.time)}" aria-label="Time (optional)"><button type="button" class="pill-btn ed-done">Done</button></span>`
           : `<button type="button" class="ed ed-date${r.date ? '' : ' empty'}" data-i="${i}" data-f="date" aria-label="Edit date: ${esc(when(r))}">${esc(when(r))}${PENCIL}</button>`;
-        const src = r.manual ? 'Added by you' : `“${esc(r.quote)}”${r.page ? ` · page ${esc(r.page)}` : ''}`;
+        const src = r.manual ? 'Added by you' : `“${esc(r.quote)}”`;
         const tags = [r.dup && !r.edited ? 'already in Coming up' : '', r.edited && !r.manual ? 'edited by you' : ''].filter(Boolean).join(' · ');
         return `<div class="dt-row${r.on ? '' : ' off'}${r.dup ? ' dup' : ''}">
           <label class="dt-check"><input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} aria-label="Include ${esc(r.title || 'this item')}"><span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></label>

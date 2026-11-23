@@ -1,7 +1,7 @@
 {
   "name": "andromeda",
   "productName": "Andromeda",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "A night-sky learning app that builds study guides with Claude.",
   "main": "src/main/main.js",
   "private": true,
