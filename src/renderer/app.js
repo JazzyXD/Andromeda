@@ -23,7 +23,7 @@
   let twinkle = store.get('twinkle', 20);
   const twinkleWord = (v) => (v === 0 ? 'Off' : v <= 25 ? 'Barely' : v <= 60 ? 'Gentle' : 'Lively');
 
-  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.3 });
+  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.9 });
 
   // ---------- little constellation drawings for cards ----------
   const f = (n) => Math.round(n * 10) / 10;

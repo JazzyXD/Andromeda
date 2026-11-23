@@ -54,6 +54,7 @@
     c.world = c.pts.map(([x, y, m]) => [x + c.at[0], y + c.at[1], m]);
     const xs = c.world.map((p) => p[0]), ys = c.world.map((p) => p[1]);
     c.center = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+    c.seed = [...c.name].reduce((h, ch) => h * 31 + ch.charCodeAt(0), 7) % 100000;
     c.len = c.edges.reduce((s, [a, b]) => s + Math.hypot(c.world[b][0] - c.world[a][0], c.world[b][1] - c.world[a][1]), 0);
   }
 
@@ -92,7 +93,7 @@
     }
     // Scattered bright stars that twinkle.
     for (let i = 0; i < 210; i++) {
-      bright.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, ph: r() * 6.28, sp: 0.6 + r() * 1.4, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
+      bright.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, seed: 1000 + i, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
     }
     return { faint, bright };
   }
@@ -139,7 +140,7 @@
   function createSky(canvas, opts) {
     const ctx = canvas.getContext('2d', { alpha: false });
     const reduce = opts.reduceMotion;
-    // How much bright stars dim and brighten: 0 is still, 0.3 is the most the slider allows.
+    // How much bright stars dim and brighten: 0 is still, 0.9 is the most the slider allows.
     const twinkleAmount = () => (opts.twinkle ? opts.twinkle() : 0.06);
     const stars = buildStars();
     const band = buildBand();
@@ -153,6 +154,7 @@
     let mouse = [0, 0], mouseT = [0, 0];
     let alpha = 1, fade = null;
     let last = 0, dirty = true;
+    let still = null, stillKey = '';
 
     function camFor(id) {
       const c = CONSTELLATIONS[VIEWS[id]].center;
@@ -191,25 +193,54 @@
       return [lerp(pan.from[0], pan.to[0], e), lerp(pan.from[1], pan.to[1], e)];
     }
 
-    function drawStars(list, camL, depth, now, twinkle) {
+    // ---------- twinkling, modelled on real scintillation ----------
+    // Turbulent air makes a star's light flicker irregularly, changing many times a second (not a slow
+    // pulse). Bright stars show it most, stars low in the sky twinkle far more than high ones, and the
+    // brightest low stars flash faint colours. The bottom of the window counts as "low in the sky".
+    const hash = (n) => {
+      n |= 0;
+      n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+      n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    };
+    const noise = (seed, x) => {
+      const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+      const a = hash(seed * 7919 + i), b = hash(seed * 7919 + i + 1);
+      return (a + (b - a) * u) * 2 - 1;
+    };
+    const lowness = (y) => 0.55 + 0.9 * clamp(y / H, 0, 1);
+    function scint(seed, t, y, mag, amt) {
+      const k = amt * lowness(y) * mag;
+      let v = 1 + k * (0.65 * noise(seed, t * 11) + 0.35 * noise(seed + 17, t * 23));
+      const wink = noise(seed + 51, t * 2.5); // now and then a brief, deeper dip
+      if (wink > 0.8) v -= k * 1.5 * (wink - 0.8) / 0.2;
+      return clamp(v, 0.15, 1.7);
+    }
+
+    function drawStars(g, list, camL, depth, now, amt) {
       const ox = W / 2 - camL[0] + mouse[0] * 14 * depth, oy = H / 2 - camL[1] + mouse[1] * 10 * depth;
+      const t = now / 1000;
       for (let c = 0; c < 3; c++) {
-        ctx.fillStyle = COLORS[c];
+        g.fillStyle = COLORS[c];
         for (const s of list) {
           if (s.c !== c) continue;
           const x = s.x + ox, y = s.y + oy;
           if (x < -4 || y < -4 || x > W + 4 || y > H + 4) continue;
-          let a = s.a;
-          if (twinkle) a *= 1 - twinkle * (0.5 + 0.5 * Math.sin(now * 0.001 * s.sp + s.ph));
-          ctx.globalAlpha = a * alpha;
-          if (s.r < 0.9) ctx.fillRect(x - s.r, y - s.r, s.r * 2, s.r * 2);
-          else { ctx.beginPath(); ctx.arc(x, y, s.r, 0, 6.2832); ctx.fill(); }
+          let a = s.a, r = s.r;
+          if (amt) {
+            const v = scint(s.seed, t, y, 0.6 + 0.4 * s.r, amt);
+            a *= Math.min(v, 1.25);
+            r *= 0.88 + 0.12 * v;
+          }
+          g.globalAlpha = Math.min(1, a * alpha);
+          if (r < 0.9) g.fillRect(x - r, y - r, r * 2, r * 2);
+          else { g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill(); }
         }
       }
-      ctx.globalAlpha = 1;
+      g.globalAlpha = 1;
     }
 
-    function drawConstellation(c, camL, lineP, lineA) {
+    function drawConstellation(c, camL, lineP, lineA, now, amt) {
       const ox = W / 2 - camL[0] + mouse[0] * 14, oy = H / 2 - camL[1] + mouse[1] * 10;
       const P = c.world.map(([x, y, m]) => [x + ox, y + oy, m]);
       // Lines, traced star to star.
@@ -229,26 +260,36 @@
         }
         ctx.stroke();
       }
-      // Stars with a soft glow.
-      for (const [x, y, m] of P) {
-        if (x < -30 || y < -30 || x > W + 30 || y > H + 30) continue;
-        const R = 2.2 * m;
+      // Stars with a soft glow. These are the brightest stars, so they twinkle the most.
+      const t = now / 1000;
+      P.forEach(([x, y, m], i) => {
+        if (x < -30 || y < -30 || x > W + 30 || y > H + 30) return;
+        const seed = c.seed + i * 131;
+        const v = amt ? scint(seed, t, y, 0.55 + 0.35 * m, amt) : 1;
+        // Colour flashes: only bright stars, and mostly when low in the sky.
+        let cr = 246, cg = 240, cb = 228;
+        if (amt && m >= 1.2) {
+          const w = clamp(amt * 1.6 * (lowness(y) - 0.8), 0, 0.45) * noise(seed + 99, t * 7);
+          if (w > 0) { cr += (200 - cr) * w; cg += (222 - cg) * w; cb += (255 - cb) * w; }
+          else { cr += (255 - cr) * -w; cg += (196 - cg) * -w; cb += (178 - cb) * -w; }
+        }
+        const R = 2.2 * m * (0.9 + 0.1 * v), A = Math.min(1, v);
         const gr = ctx.createRadialGradient(x, y, 0, x, y, R * 4);
-        gr.addColorStop(0, `rgba(243,235,221,${0.22 * alpha})`); gr.addColorStop(1, 'rgba(243,235,221,0)');
+        gr.addColorStop(0, `rgba(${cr | 0},${cg | 0},${cb | 0},${0.22 * A * alpha})`); gr.addColorStop(1, 'rgba(243,235,221,0)');
         ctx.fillStyle = gr; ctx.fillRect(x - R * 4, y - R * 4, R * 8, R * 8);
-        ctx.fillStyle = `rgba(246,240,228,${0.95 * alpha})`;
+        ctx.fillStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${0.95 * A * alpha})`;
         ctx.beginPath(); ctx.arc(x, y, R, 0, 6.2832); ctx.fill();
-      }
+      });
     }
 
     function frame(now) {
       requestAnimationFrame(frame);
       const rm = reduce();
       const moving = pan || fade || lines.p < 1 || lines.out;
-      // Idle sky only needs a gentle twinkle: redraw about 24 times a second.
+      // A resting sky only redraws for the twinkle, about 30 times a second.
       if (!moving && !dirty) {
         if (rm || !twinkleAmount()) return;
-        if (now - last < 42) return;
+        if (now - last < 33) return;
       }
       last = now; dirty = false;
 
@@ -278,27 +319,37 @@
         if (outA <= 0) lines.out = null;
       }
 
+      // The still part of the sky (background, Milky Way, faint stars) is painted once and reused
+      // until the camera, the mouse drift or the fade changes it.
+      const cB = layerCam(0.88), cF = layerCam(0.92);
+      const key = [cB[0], cB[1], cF[0], cF[1], mouse[0], mouse[1], alpha, W, H].map((v) => Math.round(v * 1000)).join();
+      if (key !== stillKey || !still) {
+        stillKey = key;
+        if (!still || still.width !== canvas.width || still.height !== canvas.height) {
+          still = document.createElement('canvas'); still.width = canvas.width; still.height = canvas.height;
+        }
+        const g = still.getContext('2d');
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.drawImage(base, 0, 0);
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const bx = W / 2 - cB[0] + mouse[0] * 5, by = H / 2 - cB[1] + mouse[1] * 4;
+        g.globalAlpha = alpha;
+        const S = band.scale;
+        g.drawImage(band.canvas, (-bx - WORLD.x0) * S, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
+        g.globalAlpha = 1;
+        drawStars(g, stars.faint, cF, 0.55, now, 0);
+      }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(base, 0, 0);
+      ctx.drawImage(still, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Milky Way (deepest layer).
-      const cB = layerCam(0.88);
-      const bx = W / 2 - cB[0] + mouse[0] * 5, by = H / 2 - cB[1] + mouse[1] * 4;
-      ctx.globalAlpha = alpha;
-      const S = band.scale;
-      const sx = (-bx - WORLD.x0) * S, sy = (-by - WORLD.y0) * S;
-      ctx.drawImage(band.canvas, sx, sy, W * S, H * S, 0, 0, W, H);
-      ctx.globalAlpha = 1;
-
-      drawStars(stars.faint, layerCam(0.92), 0.55, now, false);
-      drawStars(stars.bright, layerCam(1), 1, now, rm ? 0 : twinkleAmount());
-
-      for (const [key, c] of Object.entries(CONSTELLATIONS)) {
+      const amt = rm ? 0 : twinkleAmount();
+      drawStars(ctx, stars.bright, layerCam(1), 1, now, amt);
+      for (const [name, c] of Object.entries(CONSTELLATIONS)) {
         let p = 0, a = 0;
-        if (lines.id === key) { p = lines.p; a = 1; }
-        else if (lines.out && lines.out.id === key) { p = 1; a = outA; }
-        drawConstellation(c, layerCam(1), p, a);
+        if (lines.id === name) { p = lines.p; a = 1; }
+        else if (lines.out && lines.out.id === name) { p = 1; a = outA; }
+        drawConstellation(c, layerCam(1), p, a, now, amt);
       }
     }
 
