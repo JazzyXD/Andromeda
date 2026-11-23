@@ -39,7 +39,7 @@ Rules:
 - Keep replies short: one to three sentences, unless the user asks you to explain material.
 - Use several items per tool call where you can. Dates go to tools as YYYY-MM-DD and times as 24-hour HH:MM. When no year is given, use the next date that is still ahead.
 - If it's unclear which course they mean, ask one short question instead of guessing.
-- Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
+- Deleting a course, or removing files, weeks, tests or assignments: call the tool, then reply with only "Press Remove to confirm, or Keep it to cancel." (say Delete course instead of Remove for a whole course).
 - Files under "Waiting to be filed" go into a course with attach_files once you know which course.
 - A waiting picture is at .andromeda/inbox/<its name>. When the user asks about what's in it, such as dates to add, Read it there and act on it. Pictures named "Pasted image ..." are never filed; Andromeda clears them afterwards.
 - Tests, midterms and finals are exams; everything else (quizzes, assignments, cases, projects) is an assignment. Set kind when adding.
@@ -161,7 +161,24 @@ Call propose_dates exactly once with everything, then reply with one short line.
     const steps = new Map();
     const blocks = {};
 
+    // A later text block (after a tool) can start with the hidden tag again; hold its first line
+    // until it's clear, and drop the tag if it's there.
+    let lead = null;
+    const TAG = /^\s*\[(?:sources?:[^\]]*|none)\]\s*/i;
+    const flushLead = () => {
+      if (lead === null) return;
+      const rest = lead.replace(TAG, '');
+      lead = null;
+      if (rest) { shown += rest; emit({ type: 'text', delta: rest }); }
+    };
     const onText = (delta) => {
+      if (!firstText && lead !== null) {
+        lead += delta;
+        const t = lead.trimStart();
+        if (t && !t.startsWith('[')) flushLead();
+        else if (lead.includes(']') || lead.length > 200) flushLead();
+        return;
+      }
       if (!firstText) { shown += delta; emit({ type: 'text', delta }); return; }
       if (tagState === 'ok') { shown += delta; emit({ type: 'text', delta }); return; }
       if (tagState === 'none') return;
@@ -194,12 +211,13 @@ Call propose_dates exactly once with everything, then reply with one short line.
           // Anything Claude said before using a tool was it thinking out loud ("I'll read the file").
           // Only the answer it gives after the last tool is the reply, so start the reply over.
           if (shown || (tagState === 'missing' && head)) { shown = ''; if (tagState === 'missing') head = ''; emit({ type: 'text-reset' }); }
-        }, endText: () => { if (head || shown) firstText = false; }, setErr: (t) => { errText = t; } });
+        }, endText: () => { flushLead(); if (head || shown) { firstText = false; lead = ''; } }, setErr: (t) => { errText = t; } });
       }
     });
     child.stderr.on('data', (d) => { errText += String(d); });
 
     child.on('close', async (code) => {
+      flushLead();
       handle.close();
       await fsp.rm(sysFile, { force: true }).catch(() => {});
       await fsp.rm(mcpFile, { force: true }).catch(() => {});

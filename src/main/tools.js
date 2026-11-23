@@ -50,7 +50,7 @@ function createToolServer(store, extract) {
         const p = { id: crypto.randomUUID(), kind, courseId: c.id, course: c.name, files, items };
         run.pending.push(p);
         run.onEvent({ type: 'confirm', pending: p });
-        return { content: [{ type: 'text', text: 'Waiting for the user to confirm on screen. Tell them in one short line.' }] };
+        return { content: [{ type: 'text', text: 'A confirm card is showing under your reply. Reply with only: "Press Remove to confirm, or Keep it to cancel." (For a whole course: "Press Delete course to confirm, or Keep it to cancel.")' }] };
       } catch (e) {
         return { content: [{ type: 'text', text: 'Not done: ' + (e instanceof Invalid ? e.message : 'could not find that.') }], isError: true };
       }
