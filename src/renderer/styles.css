@@ -233,6 +233,9 @@ img, svg { -webkit-user-drag: none; }
   padding: 12px 16px; border-radius: 14px; font-size: 13.5px; color: var(--soft);
   transform: translateX(-50%); opacity: 0; pointer-events: none;
 }
+.toast.has-act { display: flex; align-items: center; gap: 14px; pointer-events: auto; }
+.toast-act { flex: none; padding: 5px 12px; border: 1px solid rgba(233, 236, 245, .18); border-radius: 999px; background: rgba(233, 236, 245, .06); font: inherit; font-size: 13px; font-weight: 600; color: var(--starlight); cursor: pointer; }
+.toast-act:hover { background: rgba(233, 236, 245, .12); }
 
 @media (max-width: 760px) {
   .head h1 { font-size: 32px; }
@@ -296,10 +299,21 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .wk div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wk b { font-size: 14px; font-weight: 500; line-height: 1.35; }
 .wk span { font-size: 12px; color: var(--faint); }
-.fl { display: flex; align-items: center; gap: 12px; min-height: 46px; border-top: 1px solid rgba(233, 236, 245, .07); color: var(--faint); }
+.fl { position: relative; display: flex; align-items: center; gap: 12px; min-height: 46px; border-top: 1px solid rgba(233, 236, 245, .07); color: var(--faint); }
 .fl-name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13.5px; color: var(--starlight); overflow-wrap: anywhere; }
 .fl-name small { font-size: 11.5px; color: var(--dim); }
-.fl-kind { font-size: 11px; letter-spacing: .06em; }
+.fl-kind { flex: none; width: 40px; text-align: right; font-size: 11px; letter-spacing: .06em; }
+.fl-more { flex: none; display: grid; place-items: center; width: 30px; height: 30px; margin-right: -6px; padding: 0; border: 0; border-radius: 9px; background: none; color: var(--faint); opacity: .7; cursor: pointer; transition: background .2s, opacity .2s; }
+.fl:hover .fl-more, .fl-more:focus-visible, .fl-more[aria-expanded="true"] { opacity: 1; }
+.fl-more:hover, .fl-more[aria-expanded="true"] { background: rgba(233, 236, 245, .08); color: var(--starlight); }
+.dd-menu.fl-menu { left: auto; right: -6px; top: calc(100% - 6px); min-width: 190px; }
+.dd-menu button.danger { color: #E8A07A; }
+.dd-menu button.danger:hover, .dd-menu button.danger:focus-visible { background: rgba(232, 160, 122, 0.12); color: #F0B08E; }
+.panel.menu-open { position: relative; z-index: 20; }
+.fl.asking { gap: 8px; }
+.fl-ask { flex: 1; min-width: 0; font-size: 13.5px; color: var(--soft); }
+.fl-ask b { color: var(--starlight); font-weight: 600; overflow-wrap: anywhere; }
+.fl.asking .btn { min-height: 32px; padding: 0 14px; font-size: 13px; }
 
 /* the conversation panel grows up out of the prompt box */
 .dock.open { top: 76px; }
@@ -374,8 +388,6 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .tok { align-self: flex-end; margin-top: -2px; font-size: 11px; color: rgba(154, 165, 196, 0.55); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 
 /* Find dates checklist */
-.fl .fd { flex: none; min-height: 28px; padding: 0 10px; font-size: 12px; opacity: .75; }
-.fl:hover .fd { opacity: 1; }
 .dates { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 14px; background: rgba(217, 160, 102, .06); border: 1px solid rgba(232, 201, 160, .26); }
 .dt-head { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
 .dt-sub { margin: 0 0 6px; font-size: 13px; color: var(--faint); }

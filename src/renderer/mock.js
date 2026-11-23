@@ -96,7 +96,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.0', guides, subjects: SUBJ, device: { ...device }, sync }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.1', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
@@ -122,6 +122,12 @@
     onClaude: (f) => listeners.claude.push(f),
     answer: async (pending, yes) => {
       if (!yes) return { changes: [] };
+      if (pending.kind === 'remove_files') {
+        const c = courses.find((x) => x.id === pending.courseId);
+        c.files = c.files.filter((f) => !pending.files.includes(f.name));
+        emit('data', { courses, inbox });
+        return { changes: pending.files.map((f) => ({ course: c.name, where: 'Course files', what: f })), stepId: 'fff0002' };
+      }
       courses = courses.filter((c) => c.id !== pending.courseId);
       emit('data', { courses, inbox });
       return { changes: [{ course: pending.course, where: 'Courses', what: `Deleted ${pending.course}` }], stepId: 'def5678' };

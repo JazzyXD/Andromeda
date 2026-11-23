@@ -184,7 +184,12 @@ Call propose_dates exactly once with everything, then reply with one short line.
         buf = buf.slice(i + 1);
         if (!line) continue;
         let m; try { m = JSON.parse(line); } catch { continue; }
-        this.handle(m, { emit, steps, blocks, onText, setSession: (s) => { session = s; }, markTools: () => { usedTools = true; }, endText: () => { if (head || shown) firstText = false; }, setErr: (t) => { errText = t; } });
+        this.handle(m, { emit, steps, blocks, onText, setSession: (s) => { session = s; }, markTools: () => {
+          usedTools = true;
+          // Anything Claude said before using a tool was it thinking out loud ("I'll read the file").
+          // Only the answer it gives after the last tool is the reply, so start the reply over.
+          if (shown || (tagState === 'missing' && head)) { shown = ''; if (tagState === 'missing') head = ''; emit({ type: 'text-reset' }); }
+        }, endText: () => { if (head || shown) firstText = false; }, setErr: (t) => { errText = t; } });
       }
     });
     child.stderr.on('data', (d) => { errText += String(d); });

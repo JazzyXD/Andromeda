@@ -105,7 +105,7 @@
     const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div></div>`).join('')
       || '<p class="muted">No weeks yet. Try “Chapter 12 is taxable income for corporations”.</p>';
     const files = (c.files || []).map((fl) => `<div class="fl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-        <span class="fl-name">${esc(fl.name)}${fl.note ? `<small>${esc(fl.note)}</small>` : ''}</span>${/^(png|jpe?g|webp|gif)$/.test(fl.kind || '') ? '' : `<button type="button" class="pill-btn fd" data-file="${esc(fl.name)}" title="Reads this file for due dates with Sonnet. You check them before anything is added.">Find dates</button>`}<span class="fl-kind">${esc((fl.kind || '').toUpperCase())}</span></div>`).join('')
+        <span class="fl-name">${esc(fl.name)}${fl.note ? `<small>${esc(fl.note)}</small>` : ''}</span><span class="fl-kind">${esc((fl.kind || '').toUpperCase())}</span><button type="button" class="fl-more" data-file="${esc(fl.name)}" data-kind="${esc(fl.kind || '')}" aria-haspopup="menu" aria-expanded="false" aria-label="More for ${esc(fl.name)}">${DOTS}</button></div>`).join('')
       || '<p class="muted">Drop slides or PDFs anywhere on this page to add them.</p>';
     $('#view-course').innerHTML = `<div class="inner">
       <button type="button" class="back m" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>All courses</button>
@@ -125,7 +125,7 @@
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);
     $$('.cg-row', $('#view-course')).forEach((b) => b.addEventListener('click', () => { show('guides'); setTimeout(() => openGuide(b.dataset.guide), 50); }));
-    $$('.fd', $('#view-course')).forEach((b) => b.addEventListener('click', () => findDates(c.id, b.dataset.file)));
+    $$('.fl-more', $('#view-course')).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, b); }));
     $$('.mg', $('#view-course')).forEach((b) => b.addEventListener('click', () => openPlan({ courseId: c.id, testId: b.dataset.test })));
   }
 
@@ -224,6 +224,61 @@
     $('#g-new').addEventListener('click', () => openPlan({}));
     $$('.gcard', el).forEach((b) => b.addEventListener('click', () => openGuide(b.dataset.guide)));
   }
+
+  // ---------- a course file's "⋯" menu: Find dates, Remove file ----------
+  const DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></svg>';
+  function closeFileMenu() {
+    const m = $('.fl-menu');
+    if (!m) return;
+    const b = m.parentElement.querySelector('.fl-more');
+    if (b) b.setAttribute('aria-expanded', 'false');
+    m.closest('.panel').classList.remove('menu-open');
+    m.remove();
+  }
+  function fileMenu(c, btn) {
+    const row = btn.closest('.fl'), open = btn.getAttribute('aria-expanded') === 'true';
+    closeDropdowns(); closeFileMenu();
+    if (open) return;
+    const name = btn.dataset.file, image = /^(png|jpe?g|webp|gif)$/.test(btn.dataset.kind);
+    const m = document.createElement('div');
+    m.className = 'dd-menu fl-menu';
+    m.setAttribute('role', 'menu');
+    m.innerHTML = `${image ? '' : '<button type="button" role="menuitem" data-a="dates" title="Reads this file for due dates. You check them before anything is added."><span>Find dates</span><small>Sonnet</small></button>'}<button type="button" role="menuitem" data-a="remove" class="danger"><span>Remove file</span></button>`;
+    row.appendChild(m);
+    row.closest('.panel').classList.add('menu-open'); // above the panels below it
+    btn.setAttribute('aria-expanded', 'true');
+    m.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: reduced() ? 1 : 280, easing: SPRING });
+    $('button', m).focus({ preventScroll: true });
+    m.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const a = e.target.closest('[data-a]');
+      if (!a) return;
+      closeFileMenu();
+      if (a.dataset.a === 'dates') findDates(c.id, name);
+      else confirmRemove(c, row, name);
+    });
+    m.addEventListener('keydown', (e) => {
+      const items = $$('button', m), i = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFileMenu(); btn.focus(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+    });
+  }
+  // Removing a file asks first, right in its row. No Claude involved, and it can be undone.
+  function confirmRemove(c, row, name) {
+    const was = row.innerHTML;
+    row.classList.add('asking');
+    row.innerHTML = `<span class="fl-ask">Remove <b>${esc(name)}</b> from ${esc(c.name)}?</span><button type="button" class="btn danger" data-a="yes">Remove</button><button type="button" class="btn ghost" data-a="no">Keep it</button>`;
+    $('[data-a="no"]', row).focus({ preventScroll: true });
+    $('[data-a="no"]', row).addEventListener('click', () => { row.classList.remove('asking'); row.innerHTML = was; $('.fl-more', row).addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, $('.fl-more', row)); }); });
+    $('[data-a="yes"]', row).addEventListener('click', async () => {
+      $$('button', row).forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api.answer({ kind: 'remove_files', courseId: c.id, course: c.name, files: [name] }, true);
+        toast(`Removed ${name}`, r.stepId ? { label: 'Undo', fn: async () => { const u = await api.undo(r.stepId).catch((e) => ({ ok: false, message: e.message })); toast(u.ok ? `${name} is back` : u.message || 'Couldn\'t undo that.'); } } : null);
+      } catch (e) { toast(e.message); row.classList.remove('asking'); row.innerHTML = was; }
+    });
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('.fl-menu')) closeFileMenu(); });
 
   // A frosted dropdown in place of the browser's own menus (keyboard: arrows, Enter, Escape).
   const CHEV = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
@@ -661,13 +716,21 @@
 
   // ---------- toast ----------
   let toastTimer = null, toastAnim = null;
-  function toast(msg) {
+  // action: an optional button in the toast, such as { label: 'Undo', fn }. It stays up a little longer.
+  function toast(msg, action) {
     const t = $('#toast');
     t.textContent = msg;
+    t.classList.toggle('has-act', !!action);
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+      b.addEventListener('click', () => { b.disabled = true; action.fn(); });
+      t.append(b);
+    }
     if (toastAnim) toastAnim.cancel();
     toastAnim = t.animate([{ opacity: 0, transform: 'translate(-50%, 10px) scale(0.98)' }, { opacity: 1, transform: 'translate(-50%, 0) scale(1)' }], { duration: reduced() ? 1 : 380, easing: SPRING, fill: 'forwards' });
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastAnim = t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' }); }, 3600);
+    toastTimer = setTimeout(() => { t.classList.remove('has-act'); toastAnim = t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' }); }, action ? 7000 : 3600);
   }
 
   // ---------- files: drag and drop, paperclip, waiting chips ----------
@@ -1000,6 +1063,7 @@
         r.textContent = turn.text;
         break;
       }
+      case 'text-reset': turn.text = ''; $('.reply', el).innerHTML = '<span class="pulse" aria-label="Working"></span>'; break;
       case 'changes': for (const c of ev.changes) { const card = $(`.card[data-course="${CSS.escape(c.courseId || '')}"]`); if (card && !reduced()) card.animate([{ boxShadow: '0 0 0 1px rgba(159,201,196,.6), 0 0 34px rgba(47,127,134,.5)' }, { boxShadow: '0 10px 30px rgba(2,3,10,.30)' }], { duration: 1600, easing: 'ease-out' }); } break;
       case 'confirm': $('.extras', el).appendChild(confirmCard(ev.pending)); break;
       case 'dates': if (turn.job) $('.extras', el).appendChild(datesCard(turn.job, ev.items)); break;
@@ -1101,7 +1165,7 @@
   // ---------- shortcuts and menus ----------
   const focusPrompt = () => { openMenu(false); if (S.view === 'settings' && !S.course) show('courses'); input.focus(); };
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { if (!menu.hidden) openMenu(false); else if (S.course && document.activeElement !== input) closeCourse(); return; }
+    if (e.key === 'Escape') { if ($('.fl-menu')) closeFileMenu(); else if (!menu.hidden) openMenu(false); else if (S.course && document.activeElement !== input) closeCourse(); return; }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod || e.altKey || e.shiftKey) return;
     const k = e.key.toLowerCase();
