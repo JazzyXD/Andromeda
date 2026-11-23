@@ -9,9 +9,11 @@ const bin = require('./bin');
 const FRIENDLY = {
   mcp__andromeda__add_courses: 'Adding courses',
   mcp__andromeda__update_course: 'Updating course details',
-  mcp__andromeda__set_upcoming: 'Updating Coming up',
+  mcp__andromeda__add_upcoming: 'Adding to Coming up',
+  mcp__andromeda__change_upcoming: 'Changing Coming up',
   mcp__andromeda__remove_upcoming: 'Removing from Coming up',
-  mcp__andromeda__set_weeks: 'Updating weeks',
+  mcp__andromeda__add_weeks: 'Adding weeks',
+  mcp__andromeda__change_week: 'Changing a week',
   mcp__andromeda__attach_files: 'Filing slides',
   mcp__andromeda__delete_course: 'Asking before deleting',
   mcp__andromeda__remove_files: 'Asking before removing files',
@@ -33,7 +35,7 @@ Rules:
 - If it's unclear which course they mean, ask one short question instead of guessing.
 - Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
 - Files under "Waiting to be filed" go into a course with attach_files once you know which course.
-- Changing something that already exists (renaming a test, moving a date, relabelling a week) means editing that item by its [id ...] from the summary, never adding a new one.`;
+- Changing something that already exists (renaming a test, moving a date, relabelling a week) uses change_upcoming or change_week on that item. The add tools are only for things that don't exist yet. If a change tool says it can't find the item or finds several, ask the user which one.`;
 
 function parseUsage(info, prev) {
   const out = { ...(prev || {}) };

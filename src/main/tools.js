@@ -8,7 +8,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { Invalid } = require('./data');
 
-const TOOL_NAMES = ['add_courses', 'update_course', 'set_upcoming', 'remove_upcoming', 'set_weeks', 'attach_files', 'delete_course', 'remove_files'];
+const TOOL_NAMES = ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'delete_course', 'remove_files'];
 
 function createToolServer(store, extract) {
   const runs = new Map(); // key -> { changes: [], pending: [], onEvent }
@@ -54,20 +54,32 @@ function createToolServer(store, extract) {
       inputSchema: { course, name: z.string().optional(), instructor: z.string().optional(), schedule: z.string().optional(), school: z.string().optional(), notes: z.string().optional() },
     }, wrap(({ course: ref, ...f }) => store.updateCourse(ref, f)));
 
-    server.registerTool('set_upcoming', {
-      description: 'Add or change tests, quizzes and assignments under Coming up. To change or rename an existing item, pass its id from the course summary; leave id out only for a brand-new item. Dates YYYY-MM-DD, times HH:MM (24h).',
-      inputSchema: { course, items: z.array(z.object({ id: z.string().optional(), title: z.string().optional(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional(), done: z.boolean().optional() })) },
-    }, wrap(({ course: ref, items }) => store.setUpcoming(ref, items)));
+    const which = z.string().describe('The existing item: its id from the summary, or its current name');
+
+    server.registerTool('add_upcoming', {
+      description: 'Add NEW tests, quizzes or assignments to Coming up. Never use this to change one that already exists. Dates YYYY-MM-DD, times HH:MM (24h).',
+      inputSchema: { course, items: z.array(z.object({ title: z.string(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional() })) },
+    }, wrap(({ course: ref, items }) => store.addUpcoming(ref, items)));
+
+    server.registerTool('change_upcoming', {
+      description: 'Change ONE existing Coming up item: rename it, move its date or time, set what it covers, or mark it done. Only include what changes.',
+      inputSchema: { course, which, title: z.string().optional(), date: z.string().optional(), time: z.string().optional(), covers: z.string().optional(), done: z.boolean().optional() },
+    }, wrap(({ course: ref, which: w, ...f }) => store.changeUpcoming(ref, w, f)));
 
     server.registerTool('remove_upcoming', {
-      description: 'Remove items from Coming up, by id or title.',
+      description: 'Remove items from Coming up, each by id or current name.',
       inputSchema: { course, items: z.array(z.string()) },
     }, wrap(({ course: ref, items }) => store.removeUpcoming(ref, items)));
 
-    server.registerTool('set_weeks', {
-      description: 'Add or change weeks or chapters (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each. To change or relabel an existing week, pass its id from the course summary.',
-      inputSchema: { course, weeks: z.array(z.object({ id: z.string().optional(), label: z.string().optional(), title: z.string().optional(), files: z.array(z.string()).optional() })) },
-    }, wrap(({ course: ref, weeks }) => store.setWeeks(ref, weeks)));
+    server.registerTool('add_weeks', {
+      description: 'Add NEW weeks or chapters (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each.',
+      inputSchema: { course, weeks: z.array(z.object({ label: z.string(), title: z.string().optional(), files: z.array(z.string()).optional() })) },
+    }, wrap(({ course: ref, weeks }) => store.addWeeks(ref, weeks)));
+
+    server.registerTool('change_week', {
+      description: 'Change ONE existing week: relabel it, change its title, or set which course files belong to it. Only include what changes.',
+      inputSchema: { course, which, label: z.string().optional(), title: z.string().optional(), files: z.array(z.string()).optional() },
+    }, wrap(({ course: ref, which: w, ...f }) => store.changeWeek(ref, w, f)));
 
     server.registerTool('attach_files', {
       description: 'File newly added files (listed as "Waiting to be filed") into a course. Their text is pulled out automatically.',

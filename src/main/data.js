@@ -169,61 +169,98 @@ class DataStore extends EventEmitter {
     return changes;
   }
 
-  async setUpcoming(ref, items) {
+  // Find one existing item by id or by its current name. Never guesses: none or several is an error.
+  pick(list, which, kind, c, nameOf) {
+    const w = clean(which, 80).toLowerCase();
+    if (!w) fail(`Say which ${kind} to change.`);
+    const byId = list.filter((x) => x.id.toLowerCase() === w);
+    const hits = byId.length ? byId : list.filter((x) => nameOf(x).toLowerCase() === w);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) fail(`${c.name} has ${hits.length} ${kind}s called "${which}": ${hits.map((x) => `[id ${x.id}] ${nameOf(x)}`).join(', ')}. Ask the user which one.`);
+    fail(`${c.name} has no ${kind} "${which}". It has: ${list.map((x) => `[id ${x.id}] ${nameOf(x)}`).join(', ') || 'none'}. Ask the user which one they mean.`);
+  }
+
+  describe(it) {
+    return [it.title, [prettyDate(it.date), it.time].filter(Boolean).join(' '), it.covers].filter(Boolean).join(', ');
+  }
+
+  // New tests, quizzes and assignments only.
+  async addUpcoming(ref, items) {
     const c = await this.findCourse(ref);
     if (!Array.isArray(items) || !items.length) fail('Give at least one item.');
     const changes = [];
     for (const raw of items) {
       const title = clean(raw.title, 80);
-      let it = (raw.id && c.upcoming.find((u) => u.id === raw.id)) || (title && c.upcoming.find((u) => u.title.toLowerCase() === title.toLowerCase()));
-      if (raw.id && !it) fail(`There's no Coming up item with id ${raw.id} in ${c.name}.`);
-      const fresh = !it;
-      if (fresh) { if (!title) fail('Each upcoming item needs a title.'); it = { id: uid(), title, date: '', time: '', covers: '', done: false }; c.upcoming.push(it); }
-      if (raw.date !== undefined) it.date = validDate(raw.date);
-      if (raw.time !== undefined) it.time = validTime(raw.time);
-      if (raw.covers !== undefined) it.covers = clean(raw.covers, 160);
-      if (raw.done !== undefined) it.done = !!raw.done;
-      const when = [prettyDate(it.date), it.time].filter(Boolean).join(' ');
-      const was = !fresh && raw.id && title && it.title !== title ? it.title : '';
-      if (title) it.title = title;
-      changes.push({ course: c.name, courseId: c.id, where: 'Coming up', what: (was ? `${was} renamed to ` : '') + [it.title, when, it.covers].filter(Boolean).join(', ') + (fresh || was ? '' : ' (updated)') });
+      if (!title) fail('Each new item needs a title.');
+      if (c.upcoming.some((u) => u.title.toLowerCase() === title.toLowerCase() && (u.date || '') === (raw.date || ''))) {
+        fail(`"${title}" is already in ${c.name}'s Coming up. Use change_upcoming to edit it.`);
+      }
+      const it = { id: uid(), title, date: validDate(raw.date), time: validTime(raw.time), covers: clean(raw.covers, 160), done: false };
+      c.upcoming.push(it);
+      changes.push({ course: c.name, courseId: c.id, where: 'Coming up', what: this.describe(it) });
     }
     c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     await this.saveCourse(c);
     return changes;
   }
 
+  // Edit one item that already exists: rename, move, set what it covers, mark done.
+  async changeUpcoming(ref, which, f) {
+    const c = await this.findCourse(ref);
+    const it = this.pick(c.upcoming, which, 'Coming up item', c, (u) => u.title);
+    const before = it.title;
+    if (f.title !== undefined) { const t = clean(f.title, 80); if (!t) fail('A title can\'t be blank.'); it.title = t; }
+    if (f.date !== undefined) it.date = validDate(f.date);
+    if (f.time !== undefined) it.time = validTime(f.time);
+    if (f.covers !== undefined) it.covers = clean(f.covers, 160);
+    if (f.done !== undefined) it.done = !!f.done;
+    c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+    await this.saveCourse(c);
+    const what = (before !== it.title ? `${before} renamed to ` : '') + this.describe(it) + (it.done ? ' (done)' : '');
+    return [{ course: c.name, courseId: c.id, where: 'Coming up', what }];
+  }
+
   async removeUpcoming(ref, which) {
     const c = await this.findCourse(ref);
-    const keys = (which || []).map((w) => clean(w, 80).toLowerCase());
-    const gone = c.upcoming.filter((u) => keys.includes(u.id) || keys.includes(u.title.toLowerCase()));
-    if (!gone.length) fail('None of those are in Coming up.');
+    const gone = (which || []).map((w) => this.pick(c.upcoming, w, 'Coming up item', c, (u) => u.title));
     c.upcoming = c.upcoming.filter((u) => !gone.includes(u));
     await this.saveCourse(c);
     return gone.map((u) => ({ course: c.name, courseId: c.id, where: 'Coming up', what: `Removed ${u.title}` }));
   }
 
-  async setWeeks(ref, weeks) {
+  checkFiles(c, files) {
+    const known = c.files.map((f) => f.name);
+    for (const f of files) { if (!known.includes(f)) fail(`"${f}" isn't one of ${c.name}'s files.`); }
+    return files.slice(0, 40);
+  }
+
+  // New weeks or chapters only.
+  async addWeeks(ref, weeks) {
     const c = await this.findCourse(ref);
     if (!Array.isArray(weeks) || !weeks.length) fail('Give at least one week.');
     const changes = [];
     for (const raw of weeks) {
       const label = clean(raw.label, 40);
-      let w = (raw.id && c.weeks.find((x) => x.id === raw.id)) || (label && c.weeks.find((x) => x.label.toLowerCase() === label.toLowerCase()));
-      if (raw.id && !w) fail(`There's no week with id ${raw.id} in ${c.name}.`);
-      const fresh = !w;
-      if (fresh) { if (!label) fail('Each week needs a label, like "Week 3" or "Chapter 12".'); w = { id: uid(), label, title: '', files: [] }; c.weeks.push(w); }
-      if (label) w.label = label;
-      if (raw.title !== undefined) w.title = clean(raw.title, 120);
-      if (Array.isArray(raw.files)) {
-        const known = c.files.map((f) => f.name);
-        for (const f of raw.files) { if (!known.includes(f)) fail(`"${f}" isn't one of this course's files.`); }
-        w.files = raw.files.slice(0, 40);
-      }
-      changes.push({ course: c.name, courseId: c.id, where: 'Weeks', what: [label, w.title].filter(Boolean).join(': ') + (fresh ? '' : ' (updated)') });
+      if (!label) fail('Each week needs a label, like "Week 3" or "Chapter 12".');
+      if (c.weeks.some((w) => w.label.toLowerCase() === label.toLowerCase())) fail(`${c.name} already has "${label}". Use change_week to edit it.`);
+      const w = { id: uid(), label, title: clean(raw.title, 120), files: Array.isArray(raw.files) ? this.checkFiles(c, raw.files) : [] };
+      c.weeks.push(w);
+      changes.push({ course: c.name, courseId: c.id, where: 'Weeks', what: [w.label, w.title].filter(Boolean).join(': ') });
     }
     await this.saveCourse(c);
     return changes;
+  }
+
+  // Edit one week that already exists.
+  async changeWeek(ref, which, f) {
+    const c = await this.findCourse(ref);
+    const w = this.pick(c.weeks, which, 'week', c, (x) => x.label);
+    const before = w.label;
+    if (f.label !== undefined) { const l = clean(f.label, 40); if (!l) fail('A week label can\'t be blank.'); w.label = l; }
+    if (f.title !== undefined) w.title = clean(f.title, 120);
+    if (Array.isArray(f.files)) w.files = this.checkFiles(c, f.files);
+    await this.saveCourse(c);
+    return [{ course: c.name, courseId: c.id, where: 'Weeks', what: (before !== w.label ? `${before} renamed to ` : '') + [w.label, w.title].filter(Boolean).join(': ') }];
   }
 
   async inbox() {
