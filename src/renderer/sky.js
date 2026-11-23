@@ -68,12 +68,12 @@
   // They sit in one row just below the Milky Way, so on a course page the band crosses the top while
   // the constellation sits in clear dark sky lower down. Every star stays at least CLEAR px from the
   // band's centre line, outlines stay at least 2 x M px apart, and the three tab constellations are
-  // left alone. As many as fit (the first 17 courses) go in that row, packed in a mixed order so the
-  // first few courses end up spread round the sky rather than side by side, with the spare room shared
-  // out evenly. Any after that fill a second row further down.
+  // left alone. They're packed in a mixed order so the first few courses end up spread round the sky
+  // rather than side by side, with the spare room shared out evenly. (If the list ever outgrows one
+  // row, the extras fill a second row further down.)
   {
     const keys = Object.keys(SHARED);
-    const M = 75; // outlines stay at least 150px apart
+    const M = 90; // outlines stay at least 180px apart
     const CLEAR = 360; // the glow fades out about 300px from the band's centre
     const span = (pts) => {
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
