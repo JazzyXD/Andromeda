@@ -795,6 +795,22 @@
   const input = $('#prompt-input');
   const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; };
   input.addEventListener('input', grow);
+  // Pasting files or a screenshot: they join the waiting files, like dropping them in. Text pastes
+  // as text. Word and Excel put a picture of what you copied on the clipboard too; the text wins there.
+  input.addEventListener('paste', async (e) => {
+    const cd = e.clipboardData, files = cd ? [...cd.files] : [];
+    if (!files.length) return;
+    const paths = files.map((f) => api.pathFor(f)).filter(Boolean);
+    const isImg = (f) => /^image\//.test(f.type);
+    if (!paths.length && files.every(isImg) && cd.getData('text/plain').trim()) return;
+    e.preventDefault();
+    try {
+      if (paths.length) await api.receive(paths);
+      else for (const f of files) await api.receiveData(f.name, new Uint8Array(await f.arrayBuffer()));
+      const pics = !paths.length && files.every(isImg);
+      toast(pics ? (files.length > 1 ? 'Pictures added.' : 'Picture added.') + ' Say what to do with it, like “add these dates”.' : 'Ready to file. Say which course they belong to.');
+    } catch (err) { toast(err.message); }
+  });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#prompt').requestSubmit(); } });
 
   const convo = $('#convo'), log = $('#convo-log');

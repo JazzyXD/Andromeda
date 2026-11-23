@@ -39,6 +39,7 @@ Rules:
 - If it's unclear which course they mean, ask one short question instead of guessing.
 - Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
 - Files under "Waiting to be filed" go into a course with attach_files once you know which course.
+- A waiting picture (often a pasted screenshot) is at .andromeda/inbox/<its name>. When the user asks about what's in it, such as dates to add, Read it there, act on it, then file it into that course.
 - To pull due dates out of a course file (an outline, schedule or critical path), call offer_find_dates instead of reading the file yourself.
 - If the user wants a learning guide, call offer_guide (with the test, if they named one). Never write a guide or long notes in the chat.
 - Changing something that already exists (renaming a test, moving a date, relabelling a week) uses change_upcoming or change_week on that item. The add tools are only for things that don't exist yet. If a change tool says it can't find the item or finds several, ask the user which one.`;

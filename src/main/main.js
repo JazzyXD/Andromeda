@@ -362,6 +362,23 @@ const handlers = {
     if (err) throw new Error('Couldn\'t open it: ' + err);
     return true;
   },
+  // Pasted into the prompt with no file behind it (a screenshot), or a copied file the window can't
+  // see the path of: saved into the waiting files like a dropped one.
+  'files:receiveData': async (_e, { name, data }) => {
+    if (!data || !data.byteLength) throw new Error('Nothing to add.');
+    if (data.byteLength > 50e6) throw new Error('That\'s too big to paste. Drag the file in instead.');
+    let n = path.basename(String(name || '')).replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    if (!n || /^image\.(png|jpe?g|gif|webp)$/i.test(n)) {
+      const d = new Date(), h = d.getHours() % 12 || 12, ext = (/\.(\w+)$/.exec(n) || [0, 'png'])[1];
+      n = `Pasted image ${d.toLocaleString('en', { month: 'short' })} ${d.getDate()}, ${h}.${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'am' : 'pm'}.${ext}`;
+    }
+    const dir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'andromeda-paste-'));
+    const tmp = path.join(dir, n);
+    await fs.promises.writeFile(tmp, Buffer.from(data));
+    try { await store.receive([tmp]); } finally { fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {}); }
+    store.emit('changed');
+    return store.inbox();
+  },
   'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
   'github:start': () => github.start(),
   'github:wait': async () => { await github.wait(); return linkAndSync(); },
