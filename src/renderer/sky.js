@@ -24,12 +24,12 @@
   // The stars first painted between these heights; the strips above and below were added later.
   const CORE_Y = [-900, 3900];
 
-  // Centre line of the Milky Way around the sky: one long, gentle wave, highest by Ursa Major and
-  // lowest by Ursa Minor (Catmull-Rom through these points). The last point is the first one again,
+  // Centre line of the Milky Way around the sky: one long, gentle wave, highest just above Ursa Major
+  // and lowest by Ursa Minor (Catmull-Rom through these points). The last point is the first one again,
   // a full turn later, so the band joins up with itself.
   const BAND = Array.from({ length: 11 }, (_, i) => {
     const x = -1500 + i * 820;
-    return [x, Math.round(1575 - 775 * Math.cos(2 * Math.PI * (x - 1300) / 8200))];
+    return [x, Math.round(1380 - 580 * Math.cos(2 * Math.PI * (x - 1300) / 8200))];
   });
   const CORE = [260, 1400]; // where the band glows gold, like the galactic core
 
@@ -59,15 +59,15 @@
   // Each view looks at one constellation. The constellation sits up and to the right, like the mockups.
   const VIEWS = { courses: 'ursaMajor', guides: 'orion', settings: 'ursaMinor' };
 
-  // Each course's constellation, from the shared list, drawn 3x larger in the sky.
+  // Each course's constellation, from the shared list, drawn 2.6x larger in the sky.
   const SHARED = (window.AndromedaConstellations && window.AndromedaConstellations.COURSE) || {};
-  // They're spread evenly along the Milky Way, alternating above and below it, each in the dark sky
-  // just beside the glow: every star stays at least CLEAR px from the band's centre line, so the stars
-  // and lines read clearly, with the band running close by. Each takes the nearest free spot to its
-  // share of the band where its outline, plus a margin, touches no other constellation.
+  // They're spread evenly along the Milky Way, all just below it, so on a course page the band crosses
+  // the top while the constellation sits in clear dark sky lower down. Every star stays at least CLEAR
+  // px from the band's centre line. Each takes the nearest free spot to its share of the band where
+  // its outline, plus a margin, touches no other constellation; a second row further down takes the rest.
   {
     const keys = Object.keys(SHARED), line = bandSamples(20), N = line.length;
-    const M = 90; // room around each one, so outlines stay at least 180px apart
+    const M = 60; // room around each one, so outlines stay at least 120px apart
     const CLEAR = 360; // the glow fades out about 300px from the band's centre
     const span = (pts) => {
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -91,7 +91,7 @@
     for (let o = 300; o <= 1300; o += 50) OFFSETS.push(o);
     keys.forEach((key, k) => {
       const c = SHARED[key];
-      const pts = c.p.map(([x, y, m]) => [x * 3, y * 3, (m || 1) * 1.05]);
+      const pts = c.p.map(([x, y, m]) => [x * 2.6, y * 2.6, (m || 1) * 1.05]);
       const s = span(pts), w = s.x1 - s.x0, h = s.y1 - s.y0, mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
       const ideal = ((k + 0.5) / keys.length) * N, pref = k % 2 ? 1 : -1;
       let best = null;
@@ -100,14 +100,14 @@
         if (best && step > best.score) break;
         for (const i of step ? [Math.round(ideal) + step, Math.round(ideal) - step] : [Math.round(ideal)]) {
           const [bx, by] = line[((i % N) + N) % N];
-          for (const side of [pref, -pref]) {
+          for (const side of [1]) { // below the band, so it crosses the top of the course page
             for (const off of OFFSETS) {
               const cx = bx, cy = by + side * off;
               const b = [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M];
               if (hits(b)) continue;
               const near = Math.min(...pts.map(([x, y]) => bandDist(x - mx + cx, y - my + cy)));
               if (near < CLEAR) continue;
-              const score = step + (near - CLEAR) / 25 + (side === pref ? 0 : 6);
+              const score = step + (near - CLEAR) / 4; // strongly prefer the first row, right under the band
               if (!best || score < best.score) best = { score, cx, cy, b };
               break; // further out on this side would only be further from the band
             }
@@ -122,6 +122,17 @@
       CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at: [best.cx - mx, best.cy - my], course: true };
     });
   }
+  // The band's height at any point round the sky.
+  const BAND_LINE = bandSamples(10);
+  BAND_LINE.push([BAND_LINE[0][0] + PERIOD, BAND_LINE[0][1]]);
+  function bandYAt(x) {
+    x = wrapX(x);
+    let lo = 0, hi = BAND_LINE.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (BAND_LINE[m][0] <= x) lo = m; else hi = m; }
+    const a = BAND_LINE[lo], b = BAND_LINE[hi];
+    return lerp(a[1], b[1], clamp((x - a[0]) / ((b[0] - a[0]) || 1), 0, 1));
+  }
+
   // A view id ('courses'), or a course constellation ('con:lyra').
   const conOf = (id) => (CONSTELLATIONS[id] ? id : VIEWS[id]);
 
@@ -316,8 +327,13 @@
     function camFor(id) {
       const k = CONSTELLATIONS[conOf(id)], c = k.center;
       // Tab constellations sit up and to the right; a course's sits lower, in the open space under its page.
-      const fx = k.course ? 0.7 : W < 1100 ? 0.74 : 0.8, fy = k.course ? 0.7 : 0.3;
-      return [c[0] - (fx - 0.5) * W, c[1] - (fy - 0.5) * H];
+      const fx = k.course ? 0.7 : W < 1100 ? 0.74 : 0.8;
+      let sy = (k.course ? 0.7 : 0.3) * H;
+      if (k.course) { // low enough to clear the page's panels, high enough that the band crosses the top
+        const above = c[1] - bandYAt(c[0]);
+        sy = clamp(0.25 * H + above, 0.62 * H, Math.max(0.62 * H, H - 150 - k.hh));
+      }
+      return [c[0] - (fx - 0.5) * W, c[1] - (sy - 0.5 * H)];
     }
     // The same spot, a whole number of turns round so it's the nearest one: pans take the short way.
     const nearest = (t) => [t[0] + PERIOD * Math.round((cam[0] - t[0]) / PERIOD), t[1]];
