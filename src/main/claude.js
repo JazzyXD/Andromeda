@@ -140,6 +140,10 @@ Call propose_dates exactly once with everything, then reply with one short line.
     // Make sure the run uses the Pro plan sign-in, never an API key that would bill separately.
     const env = { ...process.env };
     for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) delete env[k];
+    // Keep the shared setup (instructions, tools, course summary) cached for an hour between prompts,
+    // rather than relying on the default. FORCE_PROMPT_CACHING_5M would override it, so drop that too.
+    env.CLAUDE_CODE_PROMPT_CACHE_TTL = '1h';
+    delete env.FORCE_PROMPT_CACHING_5M;
 
     const spec = bin.spawnSpec(file, args);
     const child = spawn(spec.cmd, spec.args, { cwd: this.store.dir, env, windowsHide: true });
