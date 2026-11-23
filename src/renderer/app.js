@@ -33,7 +33,10 @@
   const reduced = () => motionPref === 'reduced' || (motionPref === 'system' && media.matches);
   let twinkle = local.get('twinkle', 20);
   const twinkleWord = (v) => (v === 0 ? 'Off' : v <= 25 ? 'Barely' : v <= 60 ? 'Gentle' : 'Lively');
-  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.9 });
+  // Sky darkness: how much light pollution, from a city sky to a truly dark one. 80 is the sky as first designed.
+  let darkness = local.get('darkness', 80);
+  const darkWord = (v) => (v < 34 ? 'City' : v < 67 ? 'Suburbs' : 'Dark sky');
+  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.9, darkness: () => darkness / 100 });
 
   // ---------- state ----------
   const S = { courses: [], inbox: [], usage: {}, github: {}, claude: {}, dataDir: '', view: null, course: null };
@@ -203,10 +206,11 @@
     $('#view-settings').innerHTML = `<div class="inner" style="max-width:820px">
       <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.2</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
       <div class="panel m">
-        <h2>Motion</h2>
-        <p>How much the sky and screens move. Reduced swaps every pan and slide for a quiet crossfade.</p>
+        <h2>Sky and motion</h2>
+        <p>How the sky looks and how much it moves. Sky darkness works like light pollution: towards City the faint stars and the Milky Way fade. Reduced animations swap every pan and slide for a quiet crossfade.</p>
         <div class="row"><span class="pill">Animations</span><div class="seg" role="group" aria-label="Motion">${motionBtn('system', 'Match system')}${motionBtn('full', 'Full')}${motionBtn('reduced', 'Reduced')}</div></div>
         <div class="row"><label class="pill" for="twinkle">Star twinkle</label><div class="slide"><input type="range" id="twinkle" min="0" max="100" step="1" value="${twinkle}"><span id="twinkle-val">${twinkleWord(twinkle)}</span></div></div>
+        <div class="row"><label class="pill" for="darkness">Sky darkness</label><div class="slide"><input type="range" id="darkness" min="0" max="100" step="1" value="${darkness}"><span id="darkness-val">${darkWord(darkness)}</span></div></div>
       </div>
       <div class="panel m">
         <h2>Interface size</h2>
@@ -238,6 +242,11 @@
     paint();
     tw.addEventListener('input', () => { twinkle = +tw.value; $('#twinkle-val').textContent = twinkleWord(twinkle); paint(); sky.redraw(); });
     tw.addEventListener('change', () => local.set('twinkle', twinkle));
+    const dk = $('#darkness');
+    const paintDark = () => dk.style.setProperty('--fill', dk.value + '%');
+    paintDark();
+    dk.addEventListener('input', () => { darkness = +dk.value; $('#darkness-val').textContent = darkWord(darkness); paintDark(); sky.redraw(); });
+    dk.addEventListener('change', () => local.set('darkness', darkness));
     $('#open-data').addEventListener('click', () => api.openDataFolder());
     renderZoom();
     const ghb = $('#gh-connect');

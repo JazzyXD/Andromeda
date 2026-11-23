@@ -57,24 +57,44 @@
 
   // Each course's constellation, from the shared list, drawn 3x larger in the sky.
   const SHARED = (window.AndromedaConstellations && window.AndromedaConstellations.COURSE) || {};
-  // They're spread along the Milky Way, alternating just above and below it (like Lyra, Cygnus and
-  // Aquila in the real sky), and kept clear of the three tab constellations.
+  // They're spread evenly along the Milky Way, alternating above and below it (like Lyra, Cygnus and
+  // Aquila in the real sky). Each one takes the nearest free spot to its share of the band where its
+  // outline, plus a margin, touches no other constellation. A second row further out takes the overflow.
   {
-    const keys = Object.keys(SHARED), line = bandSamples(40);
-    const avoid = [[1171, 1070], [3967, 1886], [5500, 2150]];
+    const keys = Object.keys(SHARED), line = bandSamples(20), N = line.length;
+    const M = 90; // room around each one, so outlines stay at least 180px apart
+    const span = (pts) => {
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    };
+    const placed = Object.values(CONSTELLATIONS).map((c) => {
+      const s = span(c.pts);
+      return [s.x0 + c.at[0] - M, s.y0 + c.at[1] - M, s.x1 + c.at[0] + M, s.y1 + c.at[1] + M];
+    });
+    const hits = (b) => placed.some((p) => [-PERIOD, 0, PERIOD].some((sh) => b[0] + sh < p[2] && b[2] + sh > p[0] && b[1] < p[3] && b[3] > p[1]));
+    const LANES = [-330, 330, -700, 700];
     keys.forEach((key, k) => {
       const c = SHARED[key];
-      let i = Math.floor(((k + 0.5) / keys.length) * (line.length - 1)), side = k % 2 ? 1 : -1, cx, cy;
-      for (let tries = 0; tries < 8; tries++) {
-        const [bx, by] = line[i];
-        cx = bx; cy = by + side * 330;
-        if (avoid.every(([ax, ay]) => Math.hypot(cx - ax, cy - ay) > 700)) break;
-        side = -side; if (tries % 2) i = Math.min(line.length - 1, i + 6);
-      }
-      avoid.push([cx, cy]);
       const pts = c.p.map(([x, y, m]) => [x * 3, y * 3, (m || 1) * 1.05]);
-      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-      const at = [cx - (Math.min(...xs) + Math.max(...xs)) / 2, cy - (Math.min(...ys) + Math.max(...ys)) / 2];
+      const s = span(pts), w = s.x1 - s.x0, h = s.y1 - s.y0;
+      const ideal = ((k + 0.5) / keys.length) * N, pref = k % 2 ? 1 : -1;
+      let best = null;
+      for (let i = 0; i < N; i++) {
+        for (const lane of LANES) {
+          const cx = line[i][0], cy = line[i][1] + lane;
+          const b = [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M];
+          if (hits(b)) continue;
+          let di = Math.abs(i - ideal); di = Math.min(di, N - di);
+          const score = di + (Math.abs(lane) > 400 ? 30 : 0) + (Math.sign(lane) === pref ? 0 : 6);
+          if (!best || score < best.score) best = { score, cx, cy, b };
+        }
+      }
+      if (!best) { // no free spot left: sit on its share of the band anyway
+        const [cx, by] = line[Math.floor(ideal) % N], cy = by + pref * 330;
+        best = { cx, cy, b: [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M] };
+      }
+      placed.push(best.b);
+      const at = [best.cx - (s.x0 + s.x1) / 2, best.cy - (s.y0 + s.y1) / 2];
       CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at, course: true };
     });
   }
@@ -88,7 +108,16 @@
     c.center = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
     c.seed = [...c.name].reduce((h, ch) => h * 31 + ch.charCodeAt(0), 7) % 100000;
     c.len = c.edges.reduce((s, [a, b]) => s + Math.hypot(c.world[b][0] - c.world[a][0], c.world[b][1] - c.world[a][1]), 0);
+    c.hw = (Math.max(...xs) - Math.min(...xs)) / 2; c.hh = (Math.max(...ys) - Math.min(...ys)) / 2;
   }
+
+  // Sky darkness, 0 (city) to 1 (dark sky). The app's sky before the slider sits at about 0.8.
+  // Like real light pollution: the faintest stars go first, the Milky Way fades, and a grey-orange
+  // glow rises from the horizon.
+  const glowShare = (d) => 0.1 + 0.9 * Math.pow(d, 1.5);
+  const faintShare = (d) => 0.08 + 1.375 * Math.pow(d, 1.8); // 1 is every star the sky had before
+  const brightShare = (d) => 0.25 + 0.75 * clamp(d / 0.45, 0, 1);
+  const OTHER_LINES = 0.4; // other constellations in view get faint lines; the main one traces in at full
 
   // Sample the band's centre line.
   function bandSamples(step) {
@@ -140,6 +169,17 @@
       for (let i = 0; i < Math.round(300 * k); i++) {
         bright.push({ x: WORLD.x0 + r2() * W, y: y0 + r2() * h, r: 0.9 + r2() * 0.9, a: 0.7 + r2() * 0.3, seed: 5000 + bright.length, c: r2() < 0.2 ? 1 : r2() < 0.3 ? 2 : 0 });
       }
+    }
+    // Rank every star brightest first, so a brighter sky loses its faintest stars first.
+    const glow = (s) => s.a * s.r;
+    for (const list of [faint, bright]) [...list].sort((p, q) => glow(q) - glow(p)).forEach((s, i, all) => { s.rank = i / all.length; });
+    // Extra faint stars that only a darker sky than before shows, thickest along the Milky Way.
+    const r3 = rng(99), extra = Math.round(faint.length * 0.6);
+    for (let i = 0; i < extra; i++) {
+      let x, y;
+      if (r3() < 0.45) { const [bx, by] = line[Math.floor(r3() * line.length)]; x = wrapX(bx + gauss(r3) * 110); y = by + gauss(r3) * 190; }
+      else { x = WORLD.x0 + r3() * W; y = WORLD.y0 + r3() * (WORLD.y1 - WORLD.y0); }
+      faint.push({ x, y, r: 0.28 + r3() * 0.35, a: 0.18 + r3() * 0.32, c: r3() < 0.15 ? 1 : 0, rank: 1 + 0.6 * r3() });
     }
     return { faint, bright };
   }
@@ -199,6 +239,7 @@
     const reduce = opts.reduceMotion;
     // How much bright stars dim and brighten: 0 is still, 0.9 is the most the slider allows.
     const twinkleAmount = () => (opts.twinkle ? opts.twinkle() : 0.06);
+    const darkness = () => clamp(opts.darkness ? opts.darkness() : 0.8, 0, 1);
     const stars = buildStars();
     const band = buildBand();
     const COLORS = ['#DCE2F2', '#F3E6D2', '#CFE0FF'];
@@ -277,18 +318,18 @@
       return clamp(v, 0.15, 1.7);
     }
 
-    function drawStars(g, list, camL, depth, now, amt) {
+    function drawStars(g, list, camL, depth, now, amt, share, dim) {
       const ox = W / 2 - camL[0] + mouse[0] * 14 * depth, oy = H / 2 - camL[1] + mouse[1] * 10 * depth;
       const t = now / 1000;
       for (let c = 0; c < 3; c++) {
         g.fillStyle = COLORS[c];
         for (const s of list) {
-          if (s.c !== c) continue;
+          if (s.c !== c || s.rank >= share) continue;
           let x = s.x + ox;
           x -= PERIOD * Math.floor((x + 4) / PERIOD); // round the sky to the copy on screen
           const y = s.y + oy;
           if (y < -4 || x > W + 4 || y > H + 4) continue;
-          let a = s.a, r = s.r;
+          let a = s.a * dim, r = s.r;
           if (amt) {
             const v = scint(s.seed, t, y, 0.6 + 0.4 * s.r, amt);
             a *= Math.min(v, 1.25);
@@ -302,13 +343,17 @@
       g.globalAlpha = 1;
     }
 
-    function drawConstellation(c, camL, lineP, lineA, now, amt) {
+    // passes: [[how far traced 0..1, strength 0..1], ...], drawn in order.
+    function drawConstellation(c, camL, passes, now, amt) {
       let ox = W / 2 - camL[0] + mouse[0] * 14;
       const oy = H / 2 - camL[1] + mouse[1] * 10;
       ox -= PERIOD * Math.round((c.center[0] + ox - W / 2) / PERIOD); // the copy nearest the window
+      const cx = c.center[0] + ox, cy = c.center[1] + oy;
+      if (cx + c.hw < -40 || cx - c.hw > W + 40 || cy + c.hh < -40 || cy - c.hh > H + 40) return;
       const P = c.world.map(([x, y, m]) => [x + ox, y + oy, m]);
       // Lines, traced star to star.
-      if (lineP > 0 && lineA > 0) {
+      for (const [lineP, lineA] of passes) {
+        if (lineP <= 0 || lineA <= 0) continue;
         ctx.strokeStyle = `rgba(233,236,245,${0.24 * lineA * alpha})`;
         ctx.lineWidth = 1;
         let left = lineP * c.len;
@@ -385,8 +430,8 @@
 
       // The still part of the sky (background, Milky Way, faint stars) is painted once and reused
       // until the camera, the mouse drift or the fade changes it.
-      const cB = layerCam(0.88), cF = layerCam(0.92);
-      const key = [cB[0], cB[1], cF[0], cF[1], mouse[0], mouse[1], alpha, W, H].map((v) => Math.round(v * 1000)).join();
+      const cB = layerCam(0.88), cF = layerCam(0.92), d = darkness();
+      const key = [cB[0], cB[1], cF[0], cF[1], mouse[0], mouse[1], alpha, W, H, d].map((v) => Math.round(v * 1000)).join();
       if (key !== stillKey || !still) {
         stillKey = key;
         if (!still || still.width !== canvas.width || still.height !== canvas.height) {
@@ -396,26 +441,35 @@
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.drawImage(base, 0, 0);
         g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Light pollution lifts the whole sky, most of all near the horizon.
+        const k = Math.pow(1 - d, 1.5);
+        if (k > 0.01) {
+          g.fillStyle = `rgba(44,42,54,${0.30 * k * alpha})`; g.fillRect(0, 0, W, H);
+          const lg = g.createLinearGradient(0, H, 0, H * 0.3);
+          lg.addColorStop(0, `rgba(150,108,78,${0.26 * k * alpha})`); lg.addColorStop(1, 'rgba(150,108,78,0)');
+          g.fillStyle = lg; g.fillRect(0, H * 0.3, W, H * 0.7);
+        }
         const bx = W / 2 - cB[0] + mouse[0] * 5, by = H / 2 - cB[1] + mouse[1] * 4;
-        g.globalAlpha = alpha;
+        g.globalAlpha = alpha * glowShare(d);
         const S = band.scale, T = band.turn;
         let sx = ((-bx - WORLD.x0) * S) % T;
         if (sx < 0) sx += T;
         g.drawImage(band.canvas, sx, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
         g.globalAlpha = 1;
-        drawStars(g, stars.faint, cF, 0.55, now, 0);
+        drawStars(g, stars.faint, cF, 0.55, now, 0, faintShare(d), 1);
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(still, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const amt = rm ? 0 : twinkleAmount();
-      drawStars(ctx, stars.bright, layerCam(1), 1, now, amt);
+      drawStars(ctx, stars.bright, layerCam(1), 1, now, amt, brightShare(d), 0.6 + 0.4 * d);
+      // Every constellation in view gets faint lines; the one this view is named after traces in on top.
       for (const [name, c] of Object.entries(CONSTELLATIONS)) {
-        let p = 0, a = 0;
-        if (lines.id === name) { p = lines.p; a = 1; }
-        else if (lines.out && lines.out.id === name) { p = 1; a = outA; }
-        drawConstellation(c, layerCam(1), p, a, now, amt);
+        const passes = [[1, OTHER_LINES]];
+        if (lines.id === name) passes.push([lines.p, 1 - OTHER_LINES]);
+        else if (lines.out && lines.out.id === name) passes[0][1] = Math.max(OTHER_LINES, outA);
+        drawConstellation(c, layerCam(1), passes, now, amt);
       }
     }
 

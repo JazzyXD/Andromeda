@@ -153,7 +153,7 @@ img, svg { -webkit-user-drag: none; }
 .seg button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; color: var(--faint); }
 .seg button[aria-pressed="true"] { background: rgba(233, 236, 245, 0.12); color: var(--starlight); font-weight: 600; }
 .slide { display: flex; align-items: center; gap: 12px; }
-.slide span { min-width: 52px; font-size: 13px; color: var(--soft); }
+.slide span { min-width: 64px; font-size: 13px; color: var(--soft); }
 .slide input[type="range"] {
   -webkit-appearance: none; appearance: none; width: 220px; height: 24px; margin: 0; background: transparent;
 }
