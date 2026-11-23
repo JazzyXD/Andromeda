@@ -41,7 +41,13 @@ function createToolServer(store, extract) {
         const c = await store.findCourse(args.course);
         const files = kind === 'remove_files' ? (args.files || []).filter((f) => c.files.some((x) => x.name === f)) : [];
         if (kind === 'remove_files' && !files.length) throw new Invalid('None of those files belong to this course.');
-        const p = { id: crypto.randomUUID(), kind, courseId: c.id, course: c.name, files };
+        // Weeks, tests and assignments: found now (so a wrong name is caught before asking), removed on Yes.
+        let items = [];
+        if (kind === 'remove_weeks') items = (args.weeks || []).map((w) => store.pick(c.weeks, w, 'week', c, (x) => x.label)).map((w) => ({ id: w.id, label: [w.label, w.title].filter(Boolean).join(': ') }));
+        if (kind === 'remove_upcoming') items = (args.items || []).map((w) => store.pick(c.upcoming, w, 'test or assignment', c, (u) => u.title)).map((u) => ({ id: u.id, label: u.title }));
+        items = items.filter((x, i) => items.findIndex((y) => y.id === x.id) === i);
+        if (kind.startsWith('remove_') && kind !== 'remove_files' && !items.length) throw new Invalid('Say which ones to remove.');
+        const p = { id: crypto.randomUUID(), kind, courseId: c.id, course: c.name, files, items };
         run.pending.push(p);
         run.onEvent({ type: 'confirm', pending: p });
         return { content: [{ type: 'text', text: 'Waiting for the user to confirm on screen. Tell them in one short line.' }] };
@@ -74,9 +80,9 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, which: w, ...f }) => store.changeUpcoming(ref, w, f)));
 
     server.registerTool('remove_upcoming', {
-      description: 'Remove tests or assignments, each by id or current name.',
+      description: 'Ask to remove tests or assignments, each by id or current name. The user must confirm on screen; nothing is removed by this call.',
       inputSchema: { course, items: z.array(z.string()) },
-    }, wrap(({ course: ref, items }) => store.removeUpcoming(ref, items)));
+    }, ask('remove_upcoming'));
 
     server.registerTool('add_weeks', {
       description: 'Add one or two NEW weeks the user just told you about (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each. For more, or weeks taken from a document, use propose_weeks.',
@@ -109,9 +115,9 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, which: w, ...f }) => store.changeWeek(ref, w, f)));
 
     server.registerTool('remove_weeks', {
-      description: 'Remove weeks, each by id or current label. The course files in them stay in the course. Can be undone.',
+      description: 'Ask to remove weeks, each by id or current label. The user must confirm on screen; nothing is removed by this call. Their files stay in the course.',
       inputSchema: { course, weeks: z.array(z.string()) },
-    }, wrap(({ course: ref, weeks }) => store.removeWeeks(ref, weeks)));
+    }, ask('remove_weeks'));
 
     server.registerTool('attach_files', {
       description: 'File newly added files (listed as "Waiting to be filed") into a course. Their text is pulled out automatically.',

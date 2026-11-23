@@ -348,10 +348,13 @@ const handlers = {
   'confirm:answer': async (_e, { pending, yes }) => {
     if (!yes) return { changes: [] };
     const { changes, stepId } = await step(async () => {
-      const ch = pending.kind === 'delete_course'
-        ? await store.deleteCourse(pending.courseId)
+      const ids = (pending.items || []).map((x) => x.id);
+      const ch = pending.kind === 'delete_course' ? await store.deleteCourse(pending.courseId)
+        : pending.kind === 'remove_weeks' ? await store.removeWeeks(pending.courseId, ids)
+        : pending.kind === 'remove_upcoming' ? await store.removeUpcoming(pending.courseId, ids)
         : await store.removeFiles(pending.courseId, pending.files || []);
-      return { changes: ch, stepId: await store.commitNow(pending.kind === 'delete_course' ? `Deleted ${pending.course}` : `Removed files from ${pending.course}`) };
+      const msg = { delete_course: `Deleted ${pending.course}`, remove_weeks: `Removed weeks from ${pending.course}`, remove_upcoming: `Removed tests or assignments from ${pending.course}` }[pending.kind] || `Removed files from ${pending.course}`;
+      return { changes: ch, stepId: await store.commitNow(msg) };
     });
     await store.writeSummary();
     store.emit('changed');

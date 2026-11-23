@@ -1194,13 +1194,14 @@
   function confirmCard(p) {
     const box = document.createElement('div');
     box.className = 'confirm';
-    const what = p.kind === 'delete_course' ? `Delete <b>${esc(p.course)}</b> and everything in it?` : `Remove ${p.files.map((x) => `<b>${esc(x)}</b>`).join(', ')} from ${esc(p.course)}?`;
+    const names = (p.items && p.items.length ? p.items.map((x) => x.label) : p.files || []).map((x) => `<b>${esc(x)}</b>`).join(', ');
+    const what = p.kind === 'delete_course' ? `Delete <b>${esc(p.course)}</b> and everything in it?` : `Remove ${names} from ${esc(p.course)}?`;
     box.innerHTML = `<p>${what}</p><div class="cf-btns"><button type="button" class="btn danger yes">${p.kind === 'delete_course' ? 'Delete course' : 'Remove'}</button><button type="button" class="btn ghost no">Keep it</button></div>`;
     const answer = async (yes) => {
       $$('button', box).forEach((b) => { b.disabled = true; });
       try {
         const r = await api.answer(p, yes);
-        box.innerHTML = yes ? '' : `<p class="muted">Kept ${esc(p.course)}.</p>`;
+        box.innerHTML = yes ? '' : `<p class="muted">${p.kind === 'delete_course' ? `Kept ${esc(p.course)}.` : 'Nothing was removed.'}</p>`;
         if (yes && r.changes.length) box.replaceWith(changesCard(r.changes, r.stepId));
       } catch (e) { toast(e.message); }
     };
