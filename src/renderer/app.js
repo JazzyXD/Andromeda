@@ -161,11 +161,11 @@
           <p class="sub">${esc([c.school, c.instructor, c.schedule].filter(Boolean).join(' · ') || 'Ask to add the instructor or schedule')}</p>
           ${c.notes ? `<p class="sub notes">${esc(c.notes)}</p>` : ''}
         </div>
-        <section class="panel cu m" aria-label="Exams and assignments" id="cu"></section>
+        <section class="panel side m"><div class="panel-head"><h2>Guides</h2><button type="button" class="pill-btn" id="cg-make" title="Plan a learning guide for this course">Make a guide</button></div>${(() => { const gs = S.guides.filter((g) => g.courseId === c.id); return gs.length ? gs.map((g) => `<button type="button" class="cg-row" data-guide="${esc(g.id)}"><b>${esc(g.title.replace(c.name + ': ', ''))}</b><span>${esc(guideStatus(g).text)}</span></button>`).join('') : '<p class="muted">No guides yet.</p>'; })()}</section>
       </div>
       <div class="cols">
         <section class="panel m"><h2>Weeks</h2>${weeks}</section>
-        <section class="panel m"><div class="panel-head"><h2>Guides</h2><button type="button" class="pill-btn" id="cg-make" title="Plan a learning guide for this course">Make a guide</button></div>${(() => { const gs = S.guides.filter((g) => g.courseId === c.id); return gs.length ? gs.map((g) => `<button type="button" class="cg-row" data-guide="${esc(g.id)}"><b>${esc(g.title.replace(c.name + ': ', ''))}</b><span>${esc(guideStatus(g).text)}</span></button>`).join('') : '<p class="muted">No guides yet.</p>'; })()}</section>
+        <section class="panel cu m" aria-label="Exams and assignments" id="cu"></section>
         <section class="panel m"><h2>Course files</h2>${files}</section>
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);

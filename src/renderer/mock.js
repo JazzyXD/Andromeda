@@ -105,7 +105,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.5', guides, subjects: SUBJ, device: { ...device }, sync }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.6', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},

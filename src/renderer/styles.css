@@ -280,7 +280,7 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .course-title { margin: 0; font-size: 56px; line-height: 1.02; font-weight: 700; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .sub { margin: 12px 0 0; font-size: 15px; color: #B4BDD6; }
 .sub.notes { font-size: 13.5px; color: var(--faint); margin-top: 6px; }
-.panel.cu { flex: 0 1 420px; margin: 0; }
+.panel.side { flex: 0 1 380px; margin: 0; }
 .cu-row:not(.one) .cu-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cap { font-size: 11px !important; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px !important; }
 .cu-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(233, 236, 245, .08); }
