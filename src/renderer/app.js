@@ -1047,6 +1047,92 @@
     return box;
   }
 
+  // Claude's replies: paragraphs, **bold**, `code`, and "- " or "1. " lists. Everything is escaped first.
+  function richText(t) {
+    const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    const out = [];
+    let list = null, para = [];
+    const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+    const flushList = () => { if (list) { out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join('')}</${list.tag}>`); list = null; } };
+    for (const line of String(t).split('\n')) {
+      const m = /^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/.exec(line);
+      if (m) {
+        flushPara();
+        const tag = m[1] ? 'ul' : 'ol';
+        if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+        list.items.push(m[3]);
+      } else if (!line.trim()) { flushPara(); flushList(); }
+      else { flushList(); para.push(line); }
+    }
+    flushPara(); flushList();
+    return out.join('');
+  }
+
+  // Weeks found in a document: the same tick-and-fix checklist as dates. Click a label or what it
+  // covers to rename it, untick what doesn't belong, add any that are missing.
+  function weeksCard(ev) {
+    const c = courseById(ev.courseId);
+    const box = document.createElement('div');
+    box.className = 'dates weeks';
+    const has = (w) => !!(c && (c.weeks || []).some((x) => x.label.toLowerCase() === w.label.toLowerCase()));
+    const rows = ev.items.map((w) => ({ ...w, on: !has(w), dup: has(w), edited: false }));
+    let editing = null; // { i, field }
+    box.innerHTML = `<div class="dt-head"><span>Found ${rows.length} week${rows.length === 1 ? '' : 's'} for ${esc(ev.course)}</span></div>
+      <p class="dt-sub">Click a week or what it covers to rename it, untick anything that doesn't belong, and add any others.</p>
+      <div class="dt-rows"></div>
+      <button type="button" class="dt-more">+ Add a week</button>
+      <div class="dt-foot"><button type="button" class="btn dt-add"></button><button type="button" class="btn ghost dt-skip">Skip</button></div>`;
+    const list = $('.dt-rows', box), add = $('.dt-add', box);
+    const field = (r, i, f, ph) => (editing && editing.i === i && editing.field === f
+      ? `<input class="ed-input ed-${f}-in" value="${esc(r[f])}" placeholder="${ph}" aria-label="${f === 'label' ? 'Week' : 'What it covers'}">`
+      : `<button type="button" class="ed ed-${f}${r[f] ? '' : ' empty'}" data-i="${i}" data-f="${f}" aria-label="Edit ${f === 'label' ? 'week' : 'what it covers'}: ${esc(r[f] || 'nothing yet')}">${esc(r[f] || (f === 'label' ? 'Name this week' : 'What it covers'))}${PENCIL}</button>`);
+    function render() {
+      list.innerHTML = rows.map((r, i) => `<div class="dt-row${r.on ? '' : ' off'}${r.dup ? ' dup' : ''}">
+          <label class="dt-check"><input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} aria-label="Include ${esc(r.label || 'this week')}"><span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></label>
+          <span class="dt-main"><span class="dt-line wk-line">${field(r, i, 'label', 'Week 3')}${field(r, i, 'title', 'Chapter 3: Ethics')}</span>
+            ${r.dup || r.edited || r.manual ? `<span class="dt-quote">${[r.manual ? 'Added by you' : '', r.dup && !r.edited ? 'already in this course' : '', r.edited && !r.manual ? 'edited by you' : ''].filter(Boolean).join(' · ')}</span>` : ''}</span>
+        </div>`).join('');
+      const n = rows.filter((r) => r.on && r.label.trim()).length;
+      add.textContent = n ? `Add ${n} week${n === 1 ? '' : 's'}` : 'Nothing ticked';
+      add.disabled = !n || !!editing;
+      $$('input[type=checkbox]', list).forEach((b) => b.addEventListener('change', () => { rows[+b.dataset.i].on = b.checked; render(); }));
+      $$('.ed', list).forEach((b) => b.addEventListener('click', () => { commit(); editing = { i: +b.dataset.i, field: b.dataset.f }; render(); }));
+      const inp = $('.ed-input', list);
+      if (inp) {
+        inp.focus(); inp.select();
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); const next = editing.field === 'label' && !e.shiftKey ? 'title' : null; const i = editing.i; commit(); if (next && rows[i]) editing = { i, field: next }; render(); } if (e.key === 'Escape') { editing = null; render(); } });
+        inp.addEventListener('blur', () => setTimeout(() => { if (editing && $('.ed-input', list) === inp) { commit(); render(); } }, 120));
+      }
+    }
+    function commit() {
+      if (!editing) return;
+      const r = rows[editing.i], inp = $('.ed-input', list);
+      const v = inp ? inp.value.trim().slice(0, editing.field === 'label' ? 40 : 120) : r[editing.field];
+      if (v !== r[editing.field]) { r[editing.field] = v; r.edited = true; r.on = true; if (editing.field === 'label') r.dup = has(r); }
+      if (r.manual && !r.label.trim() && !r.title.trim() && editing.field === 'title') rows.splice(editing.i, 1);
+      editing = null;
+    }
+    render();
+    $('.dt-more', box).addEventListener('click', () => {
+      commit();
+      rows.push({ label: `Week ${rows.length + 1}`, title: '', on: true, manual: true, edited: false, dup: false });
+      editing = { i: rows.length - 1, field: 'title' };
+      render();
+    });
+    add.addEventListener('click', async () => {
+      commit();
+      const picked = rows.filter((r) => r.on && r.label.trim()).map(({ label, title }) => ({ label, title }));
+      if (!picked.length) return render();
+      add.disabled = true;
+      try {
+        const r = await api.addWeeks(ev.courseId, picked);
+        box.replaceWith(r.changes.length ? changesCard(r.changes, r.stepId) : Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Those weeks are all in the course already.' }));
+      } catch (e) { add.disabled = false; toast(e.message); }
+    });
+    $('.dt-skip', box).addEventListener('click', () => { box.innerHTML = '<p class="muted">Skipped. No weeks were added.</p>'; });
+    return box;
+  }
+
   function offerCard(ev) {
     const box = document.createElement('div');
     box.className = 'offer';
@@ -1141,7 +1227,7 @@
       reply.innerHTML = '<p>I can only help with your courses here. Try: <button type="button" class="try">When\'s my next test?</button></p>';
       $('.try', reply).addEventListener('click', (e) => { input.value = e.target.textContent; grow(); input.focus(); });
     } else if (!turn.text && ev.text) {
-      reply.textContent = ev.text;
+      reply.innerHTML = richText(ev.text);
     }
     if (ev.ok && ev.changes && ev.changes.length) extras.prepend(changesCard(ev.changes, ev.stepId));
     // A quiet note of what this prompt used. "Reused" is text Claude had seen recently, which counts for much less.
@@ -1182,7 +1268,7 @@
         const r = $('.reply', el);
         if (!turn.text) r.textContent = '';
         turn.text += ev.delta;
-        r.textContent = turn.text;
+        r.innerHTML = richText(turn.text);
         break;
       }
       case 'text-reset': turn.text = ''; $('.reply', el).innerHTML = '<span class="pulse" aria-label="Working"></span>'; break;
@@ -1190,6 +1276,7 @@
       case 'confirm': $('.extras', el).appendChild(confirmCard(ev.pending)); break;
       case 'dates': if (turn.job) $('.extras', el).appendChild(datesCard(turn.job, ev.items)); break;
       case 'offer': $('.extras', el).appendChild(offerCard(ev)); break;
+      case 'weeks': $('.extras', el).appendChild(weeksCard(ev)); break;
       case 'guide-offer': $('.extras', el).appendChild(guideOfferCard(ev)); break;
       case 'usage': S.usage = ev.usage; renderUsage(); break;
       case 'warn': toast(ev.message); break;

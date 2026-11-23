@@ -9,7 +9,7 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { Invalid } = require('./data');
 
 const TOOL_NAMES = {
-  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'offer_guide', 'delete_course', 'remove_files'],
+  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'propose_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'offer_guide', 'delete_course', 'remove_files'],
   dates: ['propose_dates'],
   guide: ['save_part'],
 };
@@ -79,9 +79,29 @@ function createToolServer(store, extract) {
     }, wrap(({ course: ref, items }) => store.removeUpcoming(ref, items)));
 
     server.registerTool('add_weeks', {
-      description: 'Add NEW weeks or chapters (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each.',
+      description: 'Add one or two NEW weeks the user just told you about (labels like "Week 3" or "Chapter 12"), optionally listing which course files belong to each. For more, or weeks taken from a document, use propose_weeks.',
       inputSchema: { course, weeks: z.array(z.object({ label: z.string(), title: z.string().optional(), files: z.array(z.string()).optional() })) },
-    }, wrap(({ course: ref, weeks }) => store.addWeeks(ref, weeks)));
+    }, wrap(({ course: ref, weeks }) => {
+      if ((weeks || []).length > 2) throw new Invalid('For more than 2 weeks, call propose_weeks so the user can check them first.');
+      return store.addWeeks(ref, weeks);
+    }));
+
+    // Weeks found in a document (a schedule or critical path) go to the user as a checklist: they
+    // tick and rename them, then add. Nothing is saved by this tool.
+    server.registerTool('propose_weeks', {
+      description: 'Show weeks found in a course document (a schedule or critical path) as a checklist the user ticks and edits before adding. Give every week, in order. Label like "Week 3"; title is what it covers, like "Chapter 3: Professional Ethics". Leave out breaks with nothing taught.',
+      inputSchema: { course, weeks: z.array(z.object({ label: z.string(), title: z.string().optional() })) },
+    }, async ({ course: ref, weeks }) => {
+      try {
+        const c = await store.findCourse(ref);
+        const items = (weeks || []).slice(0, 40).map((w) => ({ label: String(w.label || '').slice(0, 40).trim(), title: String(w.title || '').slice(0, 120).trim() })).filter((w) => w.label);
+        if (!items.length) throw new Invalid('Give at least one week.');
+        run.onEvent({ type: 'weeks', courseId: c.id, course: c.name, items });
+        return { content: [{ type: 'text', text: `The checklist of ${items.length} weeks is showing. Nothing is added until the user adds them. Tell them in one short line to check and add them.` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      }
+    });
 
     server.registerTool('change_week', {
       description: 'Change ONE existing week: relabel it, change its title, or set which course files belong to it. Only include what changes.',

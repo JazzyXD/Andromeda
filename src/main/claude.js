@@ -13,6 +13,7 @@ const FRIENDLY = {
   mcp__andromeda__change_upcoming: 'Changing a test or assignment',
   mcp__andromeda__remove_upcoming: 'Removing tests or assignments',
   mcp__andromeda__add_weeks: 'Adding weeks',
+  mcp__andromeda__propose_weeks: 'Listing the weeks found',
   mcp__andromeda__change_week: 'Changing a week',
   mcp__andromeda__attach_files: 'Filing slides',
   mcp__andromeda__delete_course: 'Asking before deleting',
@@ -42,6 +43,7 @@ Rules:
 - A waiting picture is at .andromeda/inbox/<its name>. When the user asks about what's in it, such as dates to add, Read it there and act on it. Pictures named "Pasted image ..." are never filed; Andromeda clears them afterwards.
 - Tests, midterms and finals are exams; everything else (quizzes, assignments, cases, projects) is an assignment. Set kind when adding.
 - To pull due dates out of a course file (an outline, schedule or critical path), call offer_find_dates instead of reading the file yourself.
+- To set up weeks from a course file (a schedule or critical path), read it, then call propose_weeks with every week. The user checks them; never add them with add_weeks.
 - If the user wants a learning guide, call offer_guide (with the test, if they named one). Never write a guide or long notes in the chat.
 - Changing something that already exists (renaming a test, moving a date, relabelling a week) uses change_upcoming or change_week on that item. The add tools are only for things that don't exist yet. If a change tool says it can't find the item or finds several, ask the user which one.`;
 

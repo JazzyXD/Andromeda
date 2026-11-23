@@ -293,6 +293,15 @@ class DataStore extends EventEmitter {
     return changes;
   }
 
+  // Weeks the user ticked in the checklist. Ones already in the course are skipped, not refused.
+  async addFoundWeeks(ref, items) {
+    const c = await this.findCourse(ref);
+    const have = new Set(c.weeks.map((w) => w.label.toLowerCase()));
+    const fresh = (items || []).filter((w) => clean(w.label, 40) && !have.has(clean(w.label, 40).toLowerCase()));
+    if (!fresh.length) return [];
+    return this.addWeeks(c.id, fresh.map((w) => ({ label: w.label, title: w.title || '' })));
+  }
+
   // Edit one week that already exists.
   async changeWeek(ref, which, f) {
     const c = await this.findCourse(ref);

@@ -334,6 +334,16 @@ const handlers = {
     if (stepId) backup();
     return { changes, stepId };
   },
+  'weeks:add': async (_e, { courseId, items }) => {
+    const { changes, stepId } = await step(async () => {
+      const ch = await store.addFoundWeeks(courseId, items);
+      return { changes: ch, stepId: ch.length ? await store.commitNow(`Added ${ch.length} week${ch.length === 1 ? '' : 's'} from a document`) : null };
+    });
+    await store.writeSummary();
+    store.emit('changed');
+    if (stepId) backup();
+    return { changes, stepId };
+  },
   // The user's Yes or No for a delete. Only a Yes from the window can delete anything.
   'confirm:answer': async (_e, { pending, yes }) => {
     if (!yes) return { changes: [] };
