@@ -213,8 +213,13 @@
   const CHEV = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
   function ddHtml(id, opts, value) {
     const cur = opts.find((o) => o[0] === value) || opts[0] || ['', ''];
+    // Each dropdown gets its own slight variation of the purple, fixed for that dropdown.
+    let h = [...id].reduce((a, ch) => Math.imul(a ^ ch.charCodeAt(0), 16777619), 2166136261);
+    const r = () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+    const pct = (a, b) => Math.round(a + r() * (b - a)) + '%';
+    const look = `--cx:${pct(30, 70)};--cy:${pct(30, 70)};--ca:${(0.08 + r() * 0.05).toFixed(3)};--px:${pct(0, 35)};--py:${pct(0, 35)};--pa:${(0.05 + r() * 0.06).toFixed(3)};--tx:${pct(65, 100)};--ty:${pct(65, 100)};--ta:${(0.05 + r() * 0.06).toFixed(3)};--ang:${Math.round(130 + r() * 60)}deg`;
     return `<div class="dd" id="${id}"><button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="${id}-l ${id}-v"><span id="${id}-v">${esc(cur[1])}${cur[2] ? ` <small>${esc(cur[2])}</small>` : ''}</span>${CHEV}</button>
-      <div class="dd-menu" role="listbox" hidden>${opts.map(([v, l, sub]) => `<button type="button" role="option" data-v="${esc(v)}" aria-selected="${v === cur[0]}"><span>${esc(l)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('')}</div></div>`;
+      <div class="dd-menu" role="listbox" style="${look}" hidden>${opts.map(([v, l, sub]) => `<button type="button" role="option" data-v="${esc(v)}" aria-selected="${v === cur[0]}"><span>${esc(l)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('')}</div></div>`;
   }
   function closeDropdowns(except) {
     $$('.dd').forEach((d) => { if (d !== except) { $('.dd-menu', d).hidden = true; $('.dd-btn', d).setAttribute('aria-expanded', 'false'); } });
