@@ -105,7 +105,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.13', guides, subjects: SUBJ, device: { ...device }, sync }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.14', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
@@ -142,6 +142,7 @@
       return { changes: [{ course: pending.course, where: 'Courses', what: `Deleted ${pending.course}` }], stepId: 'def5678' };
     },
     undo: async () => ({ ok: true }),
+    changeWeek: async (courseId, id, f) => { const w = courses.find((c) => c.id === courseId).weeks.find((x) => x.id === id); Object.assign(w, f); emit('data', { courses, inbox }); return true; },
     setDone: async (courseId, id, done) => { const u = courses.find((c) => c.id === courseId).upcoming.find((x) => x.id === id); u.done = !!done; emit('data', { courses, inbox }); return true; },
     onData: (f) => listeners.data.push(f),
     pickFiles: async () => [], receive: async (paths) => { inbox = inbox.concat(paths.map((p) => p.split(/[\\/]/).pop())); emit('data', { courses, inbox }); return inbox; },

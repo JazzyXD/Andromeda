@@ -324,7 +324,22 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .panel .muted { font-size: 13px; margin-top: 6px; }
 .wk { display: flex; gap: 12px; padding: 11px 0; border-top: 1px solid rgba(233, 236, 245, .07); }
 .wk .num { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; font-weight: 600; background: rgba(233, 236, 245, .07); border: 1px solid rgba(233, 236, 245, .14); }
-.wk div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wk .wk-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wk .fl-more { align-self: center; }
+.wk:hover .fl-more { opacity: 1; }
+.wk.asking { align-items: center; gap: 8px; }
+.wk.asking .btn, .wk-edit .btn { min-height: 32px; padding: 0 14px; font-size: 13px; }
+.wk.editing { align-items: center; }
+.wk-edit { flex: 1; display: grid; grid-template-columns: 96px 1fr auto auto; gap: 8px; align-items: center; min-width: 0; margin: 0; }
+.wk-edit .btn:first-of-type { grid-column: 3; }
+.panel .wk-edit { grid-template-columns: 96px minmax(0, 1fr); }
+.panel .wk-edit .btn { grid-row: 2; }
+.panel .wk-edit .btn:first-of-type { grid-column: 1; justify-self: start; }
+.panel .wk-edit .btn:last-of-type { grid-column: 2; justify-self: start; }
+.wk-edit input { min-width: 0; padding: 7px 10px; border: 1px solid rgba(233, 236, 245, .16); border-radius: 9px; background: rgba(6, 8, 22, .45); font: inherit; font-size: 13.5px; color: var(--starlight); }
+.wk-edit input:focus { outline: none; border-color: rgba(159, 201, 196, .55); }
+.wk-label-in { flex: 0 0 96px; font-weight: 600; }
+.wk-title-in { flex: 1; }
 .wk b { font-size: 14px; font-weight: 500; line-height: 1.35; }
 .wk span { font-size: 12px; color: var(--faint); }
 .fl { position: relative; display: flex; align-items: center; gap: 12px; min-height: 46px; border-top: 1px solid rgba(233, 236, 245, .07); color: var(--faint); }

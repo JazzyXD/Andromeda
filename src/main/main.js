@@ -334,6 +334,17 @@ const handlers = {
     if (stepId) backup();
     return { changes, stepId };
   },
+  // Renaming a week from its "⋯", no Claude needed.
+  'weeks:change': async (_e, { courseId, id, fields }) => {
+    await step(async () => {
+      const ch = await store.changeWeek(courseId, id, { label: fields.label, title: fields.title });
+      return store.commitNow(`Renamed week: ${ch[0] ? ch[0].what : ''}`.slice(0, 120));
+    });
+    await store.writeSummary();
+    store.emit('changed');
+    backup();
+    return true;
+  },
   'weeks:add': async (_e, { courseId, items }) => {
     const { changes, stepId } = await step(async () => {
       const ch = await store.addFoundWeeks(courseId, items);

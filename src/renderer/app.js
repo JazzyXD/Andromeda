@@ -165,7 +165,7 @@
   // ---------- one course ----------
   function renderCourse(c) {
     const k = conFor(c);
-    const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div></div>`).join('')
+    const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div class="wk-text"><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div><button type="button" class="fl-more" data-week="${esc(w.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="More for ${esc(w.label)}">${DOTS}</button></div>`).join('')
       || '<p class="muted">No weeks yet. Try “Chapter 12 is taxable income for corporations”.</p>';
     const files = (c.files || []).map((fl) => `<div class="fl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
         <span class="fl-name">${esc(fl.name)}${fl.note ? `<small>${esc(fl.note)}</small>` : ''}</span><span class="fl-kind">${esc((fl.kind || '').toUpperCase())}</span><button type="button" class="fl-more" data-file="${esc(fl.name)}" data-kind="${esc(fl.kind || '')}" aria-haspopup="menu" aria-expanded="false" aria-label="More for ${esc(fl.name)}">${DOTS}</button></div>`).join('')
@@ -188,7 +188,8 @@
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);
     $$('.cg-row', $('#view-course')).forEach((b) => b.addEventListener('click', () => { show('guides'); setTimeout(() => openGuide(b.dataset.guide), 50); }));
-    $$('.fl-more', $('#view-course')).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, b); }));
+    $$('.fl .fl-more', $('#view-course')).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); fileMenu(c, b); }));
+    $$('.wk .fl-more', $('#view-course')).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); weekMenu(c, b); }));
     renderComing(c);
     $('#cg-make').addEventListener('click', () => { const ex = (c.upcoming || []).find((u) => kindOf(u) === 'exam' && !isPast(u)); openPlan({ courseId: c.id, testId: ex ? ex.id : undefined }); });
   }
@@ -295,6 +296,7 @@
   const FILE_ICONS = {
     open: ICON('<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>'),
     dates: ICON('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
+    rename: ICON('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
     remove: ICON('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
   };
   let fileMenuBtn = null;
@@ -305,18 +307,32 @@
     if (m) m.remove();
   }
   // A bubble beside the "⋯": to its right, or to its left when there isn't room.
+  const bubbleItem = (a, label, title) => `<button type="button" role="menuitem" data-a="${a}"${a === 'remove' ? ' class="danger"' : ''}${title ? ` title="${title}"` : ''}>${FILE_ICONS[a]}<span>${label}</span></button>`;
   function fileMenu(c, btn) {
-    const row = btn.closest('.fl'), open = btn.getAttribute('aria-expanded') === 'true';
+    const row = btn.closest('.fl'), name = btn.dataset.file, image = /^(png|jpe?g|webp|gif)$/.test(btn.dataset.kind);
+    bubble(btn, bubbleItem('open', 'Open', 'Opens the original in its usual app')
+      + (image ? '' : bubbleItem('dates', 'Find dates', 'Reads this file for due dates with Sonnet. You check them before anything is added.'))
+      + '<hr>' + bubbleItem('remove', 'Remove'), (a) => {
+      if (a === 'open') api.openFile(c.id, name).catch((err) => toast(err.message));
+      else if (a === 'dates') checkSize(c, row, name);
+      else confirmRemove(c, row, name);
+    });
+  }
+  // A week's "⋯": Rename and Remove, right in its row. No Claude involved.
+  function weekMenu(c, btn) {
+    const row = btn.closest('.wk'), w = (c.weeks || []).find((x) => x.id === btn.dataset.week);
+    if (!w) return;
+    bubble(btn, bubbleItem('rename', 'Rename') + '<hr>' + bubbleItem('remove', 'Remove'), (a) => (a === 'rename' ? renameWeek(c, row, w) : confirmRemoveWeek(c, row, w)));
+  }
+  // The bubble beside a "⋯": to its right, or to its left when there isn't room.
+  function bubble(btn, html, onPick) {
+    const open = btn.getAttribute('aria-expanded') === 'true';
     closeDropdowns(); closeFileMenu();
     if (open) return;
-    const name = btn.dataset.file, image = /^(png|jpe?g|webp|gif)$/.test(btn.dataset.kind);
-    const item = (a, label, title) => `<button type="button" role="menuitem" data-a="${a}"${a === 'remove' ? ' class="danger"' : ''}${title ? ` title="${title}"` : ''}>${FILE_ICONS[a]}<span>${label}</span></button>`;
     const m = document.createElement('div');
     m.className = 'dd-menu fl-menu';
     m.setAttribute('role', 'menu');
-    m.innerHTML = item('open', 'Open', 'Opens the original in its usual app')
-      + (image ? '' : item('dates', 'Find dates', 'Reads this file for due dates with Sonnet. You check them before anything is added.'))
-      + '<hr>' + item('remove', 'Remove');
+    m.innerHTML = html;
     document.body.appendChild(m);
     const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight, gap = 12;
     const right = r.right + gap + w <= window.innerWidth - 12;
@@ -334,9 +350,7 @@
       const a = e.target.closest('[data-a]');
       if (!a) return;
       closeFileMenu();
-      if (a.dataset.a === 'open') api.openFile(c.id, name).catch((err) => toast(err.message));
-      else if (a.dataset.a === 'dates') checkSize(c, row, name);
-      else confirmRemove(c, row, name);
+      onPick(a.dataset.a);
     });
     m.addEventListener('keydown', (e) => {
       const items = $$('button', m), i = items.indexOf(document.activeElement);
@@ -379,6 +393,43 @@
     });
   }
   document.addEventListener('click', (e) => { if (!e.target.closest('.fl-menu')) closeFileMenu(); });
+
+  // Put a week row back the way it was (after Cancel or Keep it).
+  function restoreWeek(c, row, was) {
+    row.classList.remove('asking', 'editing'); row.innerHTML = was;
+    $('.fl-more', row).addEventListener('click', (e) => { e.stopPropagation(); weekMenu(c, $('.fl-more', row)); });
+  }
+  function renameWeek(c, row, w) {
+    const was = row.innerHTML;
+    row.classList.add('editing');
+    row.innerHTML = `<span class="num">${$('.num', row).textContent}</span><form class="wk-edit"><input type="text" class="wk-label-in" value="${esc(w.label)}" maxlength="40" placeholder="Week 3" aria-label="Week"><input type="text" class="wk-title-in" value="${esc(w.title || '')}" maxlength="120" placeholder="What it covers" aria-label="What it covers"><button type="submit" class="btn">Save</button><button type="button" class="btn ghost" data-a="no">Cancel</button></form>`;
+    const form = $('.wk-edit', row), label = $('.wk-label-in', row), title = $('.wk-title-in', row);
+    title.focus({ preventScroll: true }); title.select();
+    $('[data-a="no"]', row).addEventListener('click', () => restoreWeek(c, row, was));
+    form.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); restoreWeek(c, row, was); } });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const l = label.value.trim(), t = title.value.trim();
+      if (!l) { label.focus(); return; }
+      if (l === w.label && t === (w.title || '')) { restoreWeek(c, row, was); return; }
+      $$('button, input', row).forEach((b) => { b.disabled = true; });
+      try { await api.changeWeek(c.id, w.id, { label: l, title: t }); } catch (err) { toast(err.message); restoreWeek(c, row, was); }
+    });
+  }
+  function confirmRemoveWeek(c, row, w) {
+    const was = row.innerHTML, name = [w.label, w.title].filter(Boolean).join(': ');
+    row.classList.add('asking');
+    row.innerHTML = `<span class="fl-ask">Remove <b>${esc(name)}</b>? Its files stay in the course.</span><button type="button" class="btn danger" data-a="yes">Remove</button><button type="button" class="btn ghost" data-a="no">Keep it</button>`;
+    $('[data-a="no"]', row).focus({ preventScroll: true });
+    $('[data-a="no"]', row).addEventListener('click', () => restoreWeek(c, row, was));
+    $('[data-a="yes"]', row).addEventListener('click', async () => {
+      $$('button', row).forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api.answer({ kind: 'remove_weeks', courseId: c.id, course: c.name, items: [{ id: w.id, label: name }] }, true);
+        toast(`Removed ${w.label}`, r.stepId ? { label: 'Undo', fn: async () => { const u = await api.undo(r.stepId).catch((e) => ({ ok: false, message: e.message })); toast(u.ok ? `${w.label} is back` : u.message || 'Couldn\'t undo that.'); } } : null);
+      } catch (e) { toast(e.message); restoreWeek(c, row, was); }
+    });
+  }
 
   // A frosted dropdown in place of the browser's own menus (keyboard: arrows, Enter, Escape).
   const CHEV = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
