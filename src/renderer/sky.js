@@ -24,9 +24,13 @@
   // The stars first painted between these heights; the strips above and below were added later.
   const CORE_Y = [-900, 3900];
 
-  // Centre line of the Milky Way around the sky (Catmull-Rom through these points).
-  // The last point is the first one again, a full turn later, so the band joins up with itself.
-  const BAND = [[-1500, 2250], [-900, 1950], [-300, 1650], [300, 1380], [1300, 720], [2300, 1250], [3500, 1900], [4700, 2250], [6100, 2450], [6700, 2250]];
+  // Centre line of the Milky Way around the sky: one long, gentle wave, highest by Ursa Major and
+  // lowest by Ursa Minor (Catmull-Rom through these points). The last point is the first one again,
+  // a full turn later, so the band joins up with itself.
+  const BAND = Array.from({ length: 11 }, (_, i) => {
+    const x = -1500 + i * 820;
+    return [x, Math.round(1575 - 775 * Math.cos(2 * Math.PI * (x - 1300) / 8200))];
+  });
   const CORE = [260, 1400]; // where the band glows gold, like the galactic core
 
   // Constellations: points are [x, y, brightness]; edges join point indexes in tracing order.
