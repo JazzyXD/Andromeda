@@ -82,7 +82,7 @@ class ClaudeRunner {
   }
 
   // emit(event) is called for everything the window shows.
-  async run({ prompt, model = 'sonnet', effort = 'low', sessionId = null }, emit) {
+  async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null }, emit) {
     if (this.active) return emit({ type: 'done', ok: false, error: { code: 'busy', message: 'Claude is still working on the last prompt.' } });
     const file = await bin.find('claude');
     if (!file) return emit({ type: 'done', ok: false, error: { code: 'install', message: 'Claude Code isn\'t installed on this laptop.' } });
