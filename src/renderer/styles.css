@@ -256,13 +256,6 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .empty .big { font-size: 20px; font-weight: 600; color: var(--starlight); }
 
 .card.drop, .view.drop { outline: 2px dashed rgba(159, 201, 196, .7); outline-offset: 4px; }
-.grow-ghost {
-  position: fixed; z-index: 2; overflow: hidden; pointer-events: none;
-  background: rgba(16, 20, 44, .55); border: 1px solid rgba(233, 236, 245, .14);
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 30px 80px rgba(2, 3, 10, .5);
-}
-.grow-ghost .cover { height: 100%; border: 0; }
-.grow-ghost .cover .con { display: none; }
 
 /* course page */
 .back { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px 0 4px; margin-left: -4px; border: 0; border-radius: 10px; background: none; font-size: 13px; font-weight: 500; color: var(--faint); }

@@ -88,7 +88,7 @@
       <div class="head m"><div><h1>Courses</h1><p>${S.courses.length} course${S.courses.length === 1 ? '' : 's'}</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('courses'))}</p></div>
       <div class="grid">${cards}</div></div>`;
     $$('.card', el).forEach((card) => {
-      card.addEventListener('click', () => openCourse(card.dataset.course, card));
+      card.addEventListener('click', () => openCourse(card.dataset.course));
       dropTarget(card, (paths) => attachToCourse(card.dataset.course, paths));
     });
   }
@@ -126,55 +126,45 @@
     $$('.fd', $('#view-course')).forEach((b) => b.addEventListener('click', () => findDates(c.id, b.dataset.file)));
   }
 
-  function openCourse(id, card) {
+  // Opening and closing a course move like a tab change: the old screen drifts off with the stars
+  // while the sky pans, and the new one settles in from the far side. No zoom, no flash.
+  function swapScreens(from, to, plan, stillCurrent) {
+    busy.forEach((a) => { if (a.playState === 'running') a.finish(); });
+    busy = [];
+    if (reduced()) { from.hidden = true; to.hidden = false; to.scrollTop = 0; return; }
+    const d = 150, tx = plan.dx * d, ty = plan.dy * d * 0.6;
+    const out = from.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1, filter: 'blur(0px)' },
+      { transform: `translate(${tx}px,${ty}px) scale(0.97)`, opacity: 0, filter: 'blur(3px)' },
+    ], { duration: Math.min(420, plan.dur * 0.4), easing: 'cubic-bezier(.5,0,.75,.15)', fill: 'forwards' });
+    busy.push(out);
+    out.onfinish = () => { out.cancel(); if (stillCurrent()) from.hidden = true; };
+    to.hidden = false; to.scrollTop = 0;
+    enter(to, plan, plan.dur * 0.38);
+  }
+
+  function openCourse(id) {
     const c = courseById(id);
     if (!c) return;
     S.course = id;
     renderCourse(c);
-    const page = $('#view-course'), list = $('#view-courses');
+    const plan = sky.plan('con:' + c.constellation);
     sky.goTo('con:' + c.constellation);
     setPlaceholder();
-    if (reduced() || !card) {
-      list.hidden = true; page.hidden = false; page.scrollTop = 0;
-      if (!reduced()) enter(page, { dx: 0, dy: -1 }, 0);
-      return;
-    }
-    // The card grows into the page: a frosted panel expands from the card's spot to fill the view.
-    const from = card.getBoundingClientRect(), stage = $('#stage').getBoundingClientRect();
-    const ghost = document.createElement('div');
-    ghost.className = 'grow-ghost';
-    ghost.innerHTML = card.querySelector('.cover').outerHTML;
-    document.body.appendChild(ghost);
-    const to = { left: stage.left + 16, top: stage.top + 8, width: stage.width - 32, height: stage.height - 150 };
-    const grow = ghost.animate([
-      { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px', borderRadius: '14px', opacity: 1 },
-      { left: to.left + 'px', top: to.top + 'px', width: to.width + 'px', height: to.height + 'px', borderRadius: '22px', opacity: 1, offset: 0.8 },
-      { left: to.left + 'px', top: to.top + 'px', width: to.width + 'px', height: to.height + 'px', borderRadius: '22px', opacity: 0 },
-    ], { duration: 900, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'forwards' });
-    $$('.card, .head', list).forEach((el) => {
-      const a = el === card ? null : el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.96)' }], { duration: 300, easing: 'ease-in', fill: 'forwards' });
-      if (a) setTimeout(() => a.cancel(), 950);
-    });
-    card.style.visibility = 'hidden';
-    setTimeout(() => { list.hidden = true; card.style.visibility = ''; page.hidden = false; page.scrollTop = 0; enter(page, { dx: 0, dy: -1 }, 0); }, 480);
-    grow.onfinish = () => ghost.remove();
+    swapScreens($('#view-courses'), $('#view-course'), plan, () => S.course === id);
   }
 
   function closeCourse() {
     if (!S.course) return;
     const id = S.course;
     S.course = null;
-    const page = $('#view-course'), list = $('#view-courses');
+    const plan = sky.plan('courses');
     sky.goTo('courses');
     setPlaceholder();
-    const out = page.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(16px) scale(.985)' }], { duration: reduced() ? 120 : 260, easing: 'ease-in', fill: 'forwards' });
-    out.onfinish = () => {
-      out.cancel(); page.hidden = true; list.hidden = false;
-      if (reduced()) return;
-      const card = $(`.card[data-course="${CSS.escape(id)}"]`, list);
-      enter(list, { dx: 0, dy: 1 }, 0);
-      if (card) card.animate([{ boxShadow: '0 0 0 1px rgba(159,201,196,.5), 0 0 34px rgba(47,127,134,.45)' }, { boxShadow: '0 10px 30px rgba(2,3,10,.30)' }], { duration: 1200, easing: 'ease-out' });
-    };
+    swapScreens($('#view-course'), $('#view-courses'), plan, () => !S.course);
+    // A soft glow on the course you just left, so it's easy to find again.
+    const card = $(`.card[data-course="${CSS.escape(id)}"]`);
+    if (card && !reduced()) busy.push(card.animate([{ boxShadow: '0 0 0 1px rgba(159,201,196,.5), 0 0 34px rgba(47,127,134,.45)' }, { boxShadow: '0 10px 30px rgba(2,3,10,.30)' }], { duration: 1200, delay: plan.dur * 0.5, easing: 'ease-out', fill: 'backwards' }));
   }
 
   // ---------- Guides and Settings ----------
