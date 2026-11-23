@@ -257,8 +257,18 @@
     planCourse(c);
     try { S.plan.subjects = await api.guideGuess(c.name); } catch { S.plan.subjects = ['procedural']; }
     if (S.view !== 'guides' || S.course || S.guide) { renderGuides(); show('guides'); return; }
-    renderGuides();
-    enter($('#view-guides'), { dx: 0, dy: -1 }, 0);
+    swapGuides(-1);
+  }
+  // Within the Guides tab: the heading stays put (it doesn't change); only what's under it moves.
+  // The old part eases away, then the new part settles in.
+  function swapGuides(dir, change) {
+    const el = $('#view-guides');
+    const inHead = (x) => !!x.closest('.head');
+    const old = $$('.m', el).filter((x) => !inHead(x) && !(x.parentElement && x.parentElement.closest('.m')));
+    const go = () => { if (change) change(); renderGuides(); el.scrollTop = 0; enter(el, { dx: 0, dy: dir }, 0, inHead); };
+    if (reduced() || !old.length) { go(); return; }
+    const outs = old.map((x) => x.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${dir * -14}px) scale(.985)` }], { duration: 200, easing: 'ease-in', fill: 'forwards' }));
+    outs[0].onfinish = go;
   }
   function planCourse(c) {
     const P = S.plan;
@@ -296,7 +306,7 @@
   }
   function wirePlan() {
     const P = S.plan, el = $('#view-guides'), re = () => { const y = el.scrollTop; renderGuides(); el.scrollTop = y; };
-    $('#pl-cancel').addEventListener('click', () => { S.plan = null; renderGuides(); enter(el, { dx: 0, dy: 1 }, 0); });
+    $('#pl-cancel').addEventListener('click', () => swapGuides(1, () => { S.plan = null; }));
     wireDd('pl-course', async (v) => {
       const c = courseById(v); planCourse(c); P.testId = '';
       try { P.subjects = await api.guideGuess(c.name); } catch { /* keep */ }
@@ -557,9 +567,9 @@
   }
 
   // Pieces settle in one after another, nearest the incoming side first, with a little spring.
-  function enter(view, plan, delay) {
+  function enter(view, plan, delay, keep) {
     if (reduced()) return;
-    const items = $$('.m', view);
+    const items = $$('.m', view).filter((el) => !(keep && keep(el)));
     const d = 120, tx = -plan.dx * d, ty = -plan.dy * d * 0.6;
     const order = items.map((el) => { const r = el.getBoundingClientRect(); return { el, key: -(plan.dx * r.left + plan.dy * r.top) }; });
     if (plan.dx || plan.dy) order.sort((a, b) => b.key - a.key);
