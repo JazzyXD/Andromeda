@@ -184,7 +184,7 @@ let usage = {};
 const toWin = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
 
 async function setupServices() {
-  const dataDir = process.env.ANDROMEDA_DATA || path.join(app.getPath('home'), 'Andromeda');
+  const dataDir = process.env.ANDROMEDA_DATA || path.join(app.getPath('home'), 'Andromeda Data');
   store = new DataStore(dataDir);
   await store.init();
   tools = createToolServer(store, extract);

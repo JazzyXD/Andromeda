@@ -11,7 +11,7 @@ A night-sky learning app for your courses and study guides, run on your own Clau
 - **Course pages:** click a card and it grows into the course while the sky pans to that course's constellation.
 - **Usage** under the prompt box, plus the model and effort picker (default Sonnet, medium).
 
-Your data lives in an `Andromeda` folder in your home folder.
+Your data lives in an `Andromeda Data` folder in your home folder, separate from the app's code.
 
 ## Try it
 
