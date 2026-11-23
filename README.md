@@ -2,7 +2,16 @@
 
 A night-sky learning app for your courses and study guides, run on your own Claude plan through Claude Code.
 
-## What works now (stage 3)
+## What works now (stage 4)
+
+- **Two laptops, one set of courses:** connect the same GitHub account on both and they stay the same. Andromeda checks for the other laptop's changes when it opens, every 2 minutes, when you come back to its window, and right before Claude changes anything. The header shows where things stand (synced, syncing, offline, or what went wrong); click it to sync now.
+- **Changes on both laptops are combined item by item:** a test added on one and a week added on the other both stay. Only when the very same item changed on both does the newer change win; the other stays in the history.
+- **Scores from either laptop:** each laptop keeps its own score file and Andromeda combines them, so a quiz taken anywhere shows everywhere.
+- **A guide builds on one laptop at a time.** The other shows "Building on School laptop". Stop works from either one. If the building laptop goes quiet, the other offers **Carry on here**.
+- **Laptop names** come from the computer and can be changed in Settings.
+- **Second laptop:** install, sign in to Claude Code, connect GitHub, and your courses and guides appear.
+
+## Stage 3
 
 - **Learning guides:** press **Make a guide** on anything in a course's Coming up, use **Plan a guide** in Guides, or ask for a guide in the chat. The plan screen fills in the course, test and weeks, guesses the kind of course (you confirm), and builds nothing until you press Build guide. Guides default to Opus at high effort.
 - **Built a week at a time** with the rules from your guide skills (shipped in `src/main/guide-rules/`). Each week saves and backs up as soon as it's done, so you can read week 1 while the rest builds. If you hit a Claude limit, the guide pauses and carries on by itself after the reset while Andromeda is open.
@@ -37,6 +46,6 @@ Shortcuts: Ctrl or Cmd + 1, 2, 3 switch tabs. Ctrl or Cmd + K jumps to the promp
 
 ## Where things live
 
-- `src/main/` the app itself: `claude.js` runs Claude Code locked down, `tools.js` the course and guide tools, `data.js` your courses and their history, `guides.js` planning and building guides, `extract.js` slide text, `github.js` backup
+- `src/main/` the app itself: `claude.js` runs Claude Code locked down, `tools.js` the course and guide tools, `data.js` your courses and their history, `guides.js` planning and building guides, `extract.js` slide text, `github.js` connecting GitHub, `sync.js` keeping both laptops the same
 - `src/renderer/` everything you see: `sky.js` draws the sky, `galaxies.js` the distant galaxies, `app.js` runs the screens, `guide-page.js` the page a guide is shown in
 - `src/shared/constellations.js` the real constellation shapes used for courses

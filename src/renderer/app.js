@@ -39,7 +39,7 @@
   const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.9, darkness: () => darkness / 100 });
 
   // ---------- state ----------
-  const S = { courses: [], inbox: [], usage: {}, github: {}, claude: {}, dataDir: '', view: null, course: null, guides: [], subjects: {}, guide: null, plan: null, guideScroll: {}, guideStep: {} };
+  const S = { courses: [], inbox: [], usage: {}, github: {}, claude: {}, dataDir: '', view: null, course: null, guides: [], subjects: {}, guide: null, plan: null, guideScroll: {}, guideStep: {}, device: null, sync: { state: 'off' } };
   const courseById = (id) => S.courses.find((c) => c.id === id);
   const conFor = (c) => CON.COURSE[c.constellation] || CON.COURSE.lyra;
 
@@ -178,6 +178,13 @@
     const now = pieces.find((p) => p.status === 'building');
     const frac = pieces.length ? done / pieces.length : 0;
     if (g.status === 'done') return { text: 'Ready', frac: 1, tone: 'ok' };
+    // Building on the other laptop: say where. If that laptop went quiet, this one can carry on.
+    const other = g.lock && S.device && g.lock.device !== S.device.id ? g.lock : null;
+    if (other && ['building', 'planned', 'paused'].includes(g.status)) {
+      if (other.until <= Date.now()) return { text: `${other.name} stopped answering · ${done} of ${pieces.length} parts`, frac, tone: 'wait', takeover: true };
+      if (g.status === 'paused') return { text: `Paused on ${other.name} until ${g.pausedUntil ? clock(g.pausedUntil) : 'the limit resets'} · ${done} of ${pieces.length} parts`, frac, tone: 'wait', elsewhere: true };
+      return { text: `Building on ${other.name} · ${done} of ${pieces.length} parts`, frac, tone: 'run', elsewhere: true };
+    }
     if (g.status === 'paused') return { text: `Paused until ${g.pausedUntil ? clock(g.pausedUntil) : 'your limit resets'} · ${done} of ${pieces.length} parts`, frac, tone: 'wait' };
     if (g.status === 'stopped') return { text: `Stopped · ${done} of ${pieces.length} parts`, frac, tone: 'wait' };
     if (g.status === 'failed') return { text: `Couldn't finish ${(pieces.find((p) => p.error) || {}).label || 'a part'}`, frac, tone: 'bad' };
@@ -380,7 +387,7 @@
     const act = $('#gr-act', v);
     const busy = ['building', 'planned', 'paused'].includes(g.status);
     const any = (g.pieces || []).some((p) => p.status === 'done');
-    act.innerHTML = `${any ? '<button type="button" class="pill-btn" id="gr-save" title="A copy that opens in any browser, in the light version">Save as HTML</button><button type="button" class="pill-btn" id="gr-print" title="Print, or save as a PDF">Print</button>' : ''}${busy ? '<button type="button" class="pill-btn" id="gr-stop">Stop building</button>' : ''}${['stopped', 'failed'].includes(g.status) ? '<button type="button" class="pill-btn" id="gr-resume">Carry on building</button>' : ''}<button type="button" class="pill-btn" id="gr-del">Delete</button>`;
+    act.innerHTML = `${any ? '<button type="button" class="pill-btn" id="gr-save" title="A copy that opens in any browser, in the light version">Save as HTML</button><button type="button" class="pill-btn" id="gr-print" title="Print, or save as a PDF">Print</button>' : ''}${busy ? '<button type="button" class="pill-btn" id="gr-stop">Stop building</button>' : ''}${['stopped', 'failed'].includes(g.status) ? '<button type="button" class="pill-btn" id="gr-resume">Carry on building</button>' : st.takeover ? '<button type="button" class="pill-btn" id="gr-resume" title="Build the rest on this laptop instead">Carry on here</button>' : ''}<button type="button" class="pill-btn" id="gr-del">Delete</button>`;
     const on = (sel, fn) => { const b = $(sel, act); if (b) b.addEventListener('click', fn); };
     on('#gr-stop', () => api.guideStop(g.id).catch((e) => toast(e.message)));
     const standalone = async () => window.AndromedaGuidePage.page({ ...(await api.guideGet(g.id)), standalone: true });
@@ -464,9 +471,11 @@
         <div class="row"><span class="pill">Course prompts default to Haiku at medium effort; change it under the prompt box. Guides default to Opus at high effort, set on each guide's plan.</span></div>
       </div>
       <div class="panel m">
-        <h2>GitHub backup</h2>
-        <p>${gh.connected ? `Connected as @${esc(gh.login)}. Every change is saved to ${esc(gh.repo)}.` : 'Not connected. Your courses are only on this laptop.'}</p>
-        <div class="row"><span class="pill">${esc(S.dataDir)}</span><div style="display:flex;gap:8px">${gh.connected ? '' : '<button type="button" class="btn" id="gh-connect">Connect GitHub</button>'}<button type="button" class="btn ghost" id="open-data">Open data folder</button></div></div>
+        <h2>Sync and backup</h2>
+        <p>${gh.connected ? `Connected as @${esc(gh.login)}. Every change is saved to ${esc(gh.repo)}, and your other laptop picks it up within a couple of minutes. To set up a second laptop, install Andromeda there and connect the same GitHub account.` : 'Not connected. Your courses are only on this laptop.'}</p>
+        ${gh.connected ? '<p class="sync-note" id="set-sync"></p>' : ''}
+        <div class="row"><label class="pill" for="dev-name">This laptop</label><div class="sync-row"><input type="text" id="dev-name" maxlength="40" value="${esc((S.device && S.device.name) || '')}" placeholder="For example: school laptop" spellcheck="false"></div></div>
+        <div class="row"><span class="pill">${esc(S.dataDir)}</span><div style="display:flex;gap:8px">${gh.connected ? '<button type="button" class="btn ghost" id="sync-now">Sync now</button>' : '<button type="button" class="btn" id="gh-connect">Connect GitHub</button>'}<button type="button" class="btn ghost" id="open-data">Open data folder</button></div></div>
       </div>
       <div class="panel m">
         <h2>About <span class="ver">v${esc(S.version || '')}</span></h2>
@@ -488,10 +497,54 @@
     dk.addEventListener('input', () => { darkness = +dk.value; $('#darkness-val').textContent = darkWord(darkness); paintDark(); sky.redraw(); });
     dk.addEventListener('change', () => local.set('darkness', darkness));
     $('#open-data').addEventListener('click', () => api.openDataFolder());
+    const sn = $('#sync-now');
+    if (sn) sn.addEventListener('click', syncNow);
+    // The name the other laptop sees ("Building on your school laptop"). Saved when you leave the box.
+    const dn = $('#dev-name');
+    const saveName = async () => {
+      if (!S.device || dn.value.trim() === S.device.name) return;
+      try { S.device.name = await api.renameDevice(dn.value); dn.value = S.device.name; toast(`This laptop is now called ${S.device.name}`); } catch (e) { toast(e.message); }
+    };
+    dn.addEventListener('change', saveName);
+    dn.addEventListener('keydown', (e) => { if (e.key === 'Enter') dn.blur(); });
+    renderSync();
     renderZoom();
     const ghb = $('#gh-connect');
     if (ghb) ghb.addEventListener('click', () => showSetup(true));
   }
+
+  // ---------- sync status (header, and the line in Settings) ----------
+  const ago = (t) => {
+    const m = Math.floor((Date.now() - t) / 60e3);
+    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 120 ? 'an hour ago' : `at ${clock(t)}`;
+  };
+  function syncLine() {
+    const st = S.sync || { state: 'off' };
+    if (!S.github || !S.github.connected) return { dot: 'off', text: 'Saved on this laptop', title: 'Connect GitHub in Settings to sync your laptops' };
+    if (st.state === 'syncing') return { dot: 'run', text: st.at ? `Synced ${ago(st.at)}` : 'Syncing…', title: 'Swapping changes with GitHub' };
+    if (st.state === 'offline') return { dot: 'wait', text: 'Offline, saved here', title: st.message };
+    if (st.state === 'error') return { dot: 'bad', text: 'Sync problem', title: st.message + ' Click to try again.' };
+    if (st.state === 'ok' && st.at) return { dot: '', text: `Synced ${ago(st.at)}`, title: 'Click to sync now' };
+    return { dot: 'off', text: 'Not synced yet', title: 'Click to sync now' };
+  }
+  function renderSync() {
+    const l = syncLine(), b = $('#sync');
+    b.querySelector('.dot').className = 'dot ' + l.dot;
+    $('#sync-text').textContent = l.text;
+    b.title = l.title;
+    const set = $('#set-sync');
+    if (set) {
+      const st = S.sync || {};
+      set.innerHTML = `<span class="dot ${l.dot}"></span><span>${esc(st.state === 'error' || st.state === 'offline' ? st.message : l.text)}</span>`;
+    }
+  }
+  async function syncNow() {
+    if (!S.github || !S.github.connected) { show('settings'); return; }
+    try { S.sync = await api.syncNow(); renderSync(); } catch (e) { toast(e.message); }
+  }
+  $('#sync').addEventListener('click', syncNow);
+  api.onSync((st) => { S.sync = st; renderSync(); });
+  setInterval(renderSync, 30e3);
 
   // ---------- interface size ----------
   let zoom = { mode: 'auto', factor: 1, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] };
@@ -1064,7 +1117,6 @@
   if (api.platform !== 'darwin') {
     $('#brand').addEventListener('click', () => { const r = $('#brand').getBoundingClientRect(); api.popupMenu(r.left, r.bottom + 6); });
   }
-  api.onPushed((r) => { if (r && !r.ok) toast('Saved on this laptop. GitHub backup will retry next time.'); });
   media.addEventListener('change', () => sky.redraw());
 
   // ---------- start ----------

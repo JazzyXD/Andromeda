@@ -3,7 +3,10 @@
 // Folder layout (inside your Andromeda data):
 //   guides/<id>/guide.json        the plan and how far the build has got
 //   guides/<id>/parts/<piece>.html  each finished piece (the opening, each week, the ending)
-//   guides/<id>/progress.json     quiz scores, confidence ratings and typed answers
+//   guides/<id>/progress/<laptop>.json  quiz scores, confidence ratings and typed answers, one file
+//                                  per laptop so the two never clash (combined when read; the
+//                                  newest answer to each question wins)
+//   guides/<id>/progress.json     the same, from before two-laptop sync (still read)
 //
 // Claude writes only the content of each piece, with the building blocks from the guide skills
 // (boxes, quiz blocks, typed blanks, tables). Andromeda adds the page around it: title, table of
@@ -90,9 +93,25 @@ function guessSubjects(name) {
 }
 
 class GuideStore extends EventEmitter {
-  constructor(store) {
+  constructor(store, device) {
     super();
     this.store = store;
+    this.device = device;
+  }
+
+  // Every laptop's answers, combined: for each question, the most recent answer from any laptop.
+  async progress(id) {
+    const best = {};
+    try {
+      for (const [k, v] of Object.entries(JSON.parse(await fsp.readFile(this.dir(id, 'progress.json'), 'utf8')))) best[k] = { v, t: 0 };
+    } catch { /* none from before */ }
+    for (const f of await fsp.readdir(this.dir(id, 'progress')).catch(() => [])) {
+      if (!f.endsWith('.json')) continue;
+      let p = {};
+      try { p = JSON.parse(await fsp.readFile(this.dir(id, 'progress', f), 'utf8')); } catch { continue; }
+      for (const [k, e] of Object.entries(p)) if (e && (!best[k] || (e.t || 0) >= best[k].t)) best[k] = { v: e.v, t: e.t || 0 };
+    }
+    return Object.fromEntries(Object.entries(best).map(([k, e]) => [k, e.v]));
   }
 
   dir(id, ...rest) { return this.store.p('guides', id, ...rest); }
@@ -117,9 +136,7 @@ class GuideStore extends EventEmitter {
     for (const p of g.pieces) {
       try { parts[p.id] = await fsp.readFile(this.dir(id, 'parts', p.id + '.html'), 'utf8'); } catch { /* not built yet */ }
     }
-    let progress = {};
-    try { progress = JSON.parse(await fsp.readFile(this.dir(id, 'progress.json'), 'utf8')); } catch { /* none yet */ }
-    return { guide: g, parts, progress };
+    return { guide: g, parts, progress: await this.progress(id) };
   }
 
   async save(g) {
@@ -163,6 +180,7 @@ class GuideStore extends EventEmitter {
   }
 
   async savePart(id, pieceId, html) {
+    if (!fs.existsSync(this.dir(id, 'guide.json'))) throw new Invalid('This guide was deleted.');
     await fsp.mkdir(this.dir(id, 'parts'), { recursive: true });
     await fsp.writeFile(this.dir(id, 'parts', pieceId + '.html'), html);
   }
@@ -170,8 +188,7 @@ class GuideStore extends EventEmitter {
   // The latest first-try score and confidence for each week quiz and the final quiz, with the same
   // verdict the guide's score screen gives. For the guide cards; not saved into guide.json.
   async results(g) {
-    let p = {};
-    try { p = JSON.parse(await fsp.readFile(this.dir(g.id, 'progress.json'), 'utf8')); } catch { return []; }
+    const p = await this.progress(g.id);
     const verdict = (v) => (v.c > 3 && v.s / v.n < 0.7 ? 'Review first' : v.c && v.c < 3 && v.s / v.n >= 0.8 ? 'Better than you thought' : 'On track');
     return g.pieces.filter((x) => /^w\d+$/.test(x.id) || x.id === 'finish').map((x) => {
       const v = p['q:' + (x.id === 'finish' ? 'final' : x.id) + '-quiz'];
@@ -180,10 +197,12 @@ class GuideStore extends EventEmitter {
   }
 
   async saveProgress(id, key, value) {
-    const file = this.dir(id, 'progress.json');
+    if (!fs.existsSync(this.dir(id, 'guide.json'))) return;
+    await fsp.mkdir(this.dir(id, 'progress'), { recursive: true });
+    const file = this.dir(id, 'progress', this.device.id + '.json');
     let p = {};
     try { p = JSON.parse(await fsp.readFile(file, 'utf8')); } catch { /* new */ }
-    p[String(key).slice(0, 80)] = value;
+    p[String(key).slice(0, 80)] = { v: value, t: Date.now() };
     await fsp.writeFile(file, JSON.stringify(p));
     if (/^q:/.test(key)) this.emit('changed', null); // a quiz finished: the guide cards show results
   }
@@ -264,13 +283,22 @@ ${outline(g.weeks.length)}`;
 }
 
 // ---------- building ----------
+// A guide builds on one laptop at a time. The laptop building it writes a lock into guide.json
+// ({ device, name, until }) and keeps it fresh; the other laptop shows "Building on <name>" and
+// leaves it alone. If that laptop goes quiet past the lock's time, the other can carry on instead.
+const LOCK_MS = 40 * 60e3;
+const lockedBy = (g, me) => (g.lock && g.lock.device !== me.id ? g.lock : null);
+const lockFresh = (l) => !!l && l.until > Date.now();
+
 class GuideBuilder {
-  constructor({ guides, store, runner, getUsage, onCommit }) {
+  constructor({ guides, store, runner, getUsage, onCommit, sync = async () => {}, device }) {
     this.guides = guides;
     this.store = store;
     this.runner = runner;
     this.getUsage = getUsage;
-    this.onCommit = onCommit;
+    this.onCommit = onCommit; // a part was saved: upload it
+    this.sync = sync; // download the other laptop's changes (doesn't wait long)
+    this.device = device;
     this.current = null; // guide id being built
     this.timer = null;
     this.events = new EventEmitter();
@@ -278,25 +306,39 @@ class GuideBuilder {
 
   status() { return { building: this.current }; }
 
-  async build(id) {
+  // takeover: carry on a guide whose lock belongs to a laptop that has gone quiet (only when asked).
+  async build(id, { takeover = false } = {}) {
     if (this.current && this.current !== id) throw new Invalid('Another guide is building. It goes one at a time.');
     if (this.current === id) return;
     this.current = id;
     clearTimeout(this.timer);
     try {
+      await this.sync(); // the other laptop may have finished, stopped or started this guide
+      const { guide: first } = await this.guides.get(id);
+      const other = lockedBy(first, this.device);
+      if (other && (lockFresh(other) || !takeover)) return;
+      if (['stopped', 'done', 'failed'].includes(first.status) && first.lock && !other) { first.lock = null; await this.guides.save(first); }
+      if (['stopped', 'done', 'failed'].includes(first.status)) return;
+      first.lock = { device: this.device.id, name: this.device.name, until: Date.now() + LOCK_MS };
+      await this.guides.save(first);
+      await this.store.commit(`Building ${first.title} on ${this.device.name}`);
+      this.onCommit();
       for (;;) {
         const { guide: g, parts } = await this.guides.get(id);
-        if (g.status === 'stopped') break;
+        if (g.status === 'stopped' || lockedBy(g, this.device)) break;
         const piece = g.pieces.find((p) => p.status !== 'done');
-        if (!piece) { g.status = 'done'; g.pausedUntil = null; await this.guides.save(g); this.events.emit('finished', g); break; }
+        if (!piece) { g.status = 'done'; g.pausedUntil = null; g.lock = null; await this.guides.save(g); await this.store.commit(`Guide ready: ${g.title}`); this.onCommit(); this.events.emit('finished', g); break; }
         g.status = 'building'; g.pausedUntil = null; piece.status = 'building'; piece.error = '';
+        g.lock = { device: this.device.id, name: this.device.name, until: Date.now() + LOCK_MS };
         await this.guides.save(g);
         const r = await this.runPiece(g, piece, parts);
         const fresh = (await this.guides.get(id)).guide;
         const fp = fresh.pieces.find((p) => p.id === piece.id);
-        if (fresh.status === 'stopped') { fp.status = r.saved ? 'done' : 'waiting'; await this.guides.save(fresh); break; }
+        if (lockedBy(fresh, this.device)) break; // the other laptop carried on while this one was away
+        if (fresh.status === 'stopped') { fp.status = r.saved ? 'done' : 'waiting'; fresh.lock = null; await this.guides.save(fresh); await this.store.commit(`Stopped ${fresh.title}`); this.onCommit(); break; }
         if (r.saved) {
           fp.status = 'done';
+          fresh.lock = { device: this.device.id, name: this.device.name, until: Date.now() + LOCK_MS };
           await this.guides.save(fresh);
           await this.store.commit(`Guide ${fresh.title}: ${fp.label}`);
           this.onCommit();
@@ -308,13 +350,18 @@ class GuideBuilder {
           const until = [u.fiveHour, u.week].map((w) => w && w.pct >= 0.98 && w.resetsAt).filter(Boolean).sort()[0]
             || (u.fiveHour && u.fiveHour.resetsAt) || Date.now() + 60 * 60e3;
           fresh.status = 'paused'; fresh.pausedUntil = until;
+          fresh.lock = { device: this.device.id, name: this.device.name, until: until + LOCK_MS };
           await this.guides.save(fresh);
+          await this.store.commit(`Paused ${fresh.title} until the limit resets`);
+          this.onCommit();
           this.schedule(id, until);
         } else {
           fp.error = (r.error && r.error.message) || 'Claude stopped before saving this part.';
           fp.tries = (fp.tries || 0) + 1;
           fresh.status = fp.tries >= 2 ? 'failed' : 'building';
+          if (fresh.status === 'failed') fresh.lock = null;
           await this.guides.save(fresh);
+          if (fresh.status === 'failed') { await this.store.commit(`Couldn't finish ${fresh.title}`); this.onCommit(); }
           if (fresh.status === 'failed') this.events.emit('finished', fresh);
           if (fp.tries < 2) continue;
         }
@@ -339,7 +386,8 @@ class GuideBuilder {
           return { ok: true };
         },
       };
-      const prompt = await promptFor(this.store, g, piece, parts);
+      let prompt;
+      try { prompt = await promptFor(this.store, g, piece, parts); } catch (e) { resolve({ saved: false, error: { message: e.message } }); return; }
       this.runner.run({ prompt, model: g.model, effort: g.effort, mode: 'guide', system: systemFor(g), ctx }, (ev) => {
         this.events.emit('claude', { id: g.id, piece: piece.id, ev });
         if (ev.type === 'done') resolve({ saved, error: ev.ok ? null : ev.error });
@@ -347,21 +395,38 @@ class GuideBuilder {
     });
   }
 
+  // Works from either laptop: a Stop here reaches the laptop building it at its next sync.
   async stop(id) {
     const { guide: g } = await this.guides.get(id);
     if (g.status === 'done') return;
-    g.status = 'stopped'; g.pausedUntil = null;
+    g.status = 'stopped'; g.pausedUntil = null; g.lock = null;
     await this.guides.save(g);
     clearTimeout(this.timer);
     if (this.current === id) this.runner.stop();
+    else { await this.store.commit(`Stopped ${g.title}`); this.onCommit(); }
   }
 
   async resume(id) {
+    await this.sync();
     const { guide: g } = await this.guides.get(id);
+    const other = lockedBy(g, this.device);
+    if (other && lockFresh(other)) throw new Invalid(`This guide is building on ${other.name}. Stop it there, or wait until that laptop has been closed for a while.`);
     g.status = 'building';
     g.pieces.forEach((p) => { if (p.status !== 'done') { p.status = 'waiting'; p.tries = 0; p.error = ''; } });
+    g.lock = null;
     await this.guides.save(g);
-    return this.build(id);
+    return this.build(id, { takeover: true });
+  }
+
+  // After the other laptop's changes arrive: stop building here if the guide was stopped, deleted
+  // or carried on elsewhere, then pick up anything that's now this laptop's to build.
+  async afterPull() {
+    if (this.current) {
+      let g = null;
+      try { g = (await this.guides.get(this.current)).guide; } catch { /* deleted */ }
+      if (!g || g.status === 'stopped' || lockedBy(g, this.device)) this.runner.stop();
+    }
+    return this.pickUp();
   }
 
   // Carry on after a limit resets (a minute after, to be safe), as long as the app is open.
@@ -372,7 +437,9 @@ class GuideBuilder {
 
   // On start: pick up anything that was building when the app closed, or whose pause has run out.
   async pickUp() {
+    if (this.current) return;
     for (const g of await this.guides.list()) {
+      if (lockedBy(g, this.device)) continue; // the other laptop's to build (or to carry on, if asked)
       if (g.status === 'building') { this.build(g.id).catch(() => {}); return; }
       if (g.status === 'paused') {
         if (!g.pausedUntil || g.pausedUntil <= Date.now()) { this.build(g.id).catch(() => {}); return; }

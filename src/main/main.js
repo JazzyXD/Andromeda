@@ -8,6 +8,7 @@ const { extract } = require('./extract');
 const { ClaudeRunner } = require('./claude');
 const { GitHub } = require('./github');
 const { GuideStore, GuideBuilder, guessSubjects, SUBJECTS } = require('./guides');
+const { Sync, loadDevice } = require('./sync');
 
 const isMac = process.platform === 'darwin';
 const isDev = !app.isPackaged || process.argv.includes('--dev');
@@ -215,7 +216,7 @@ ipcMain.on('menu:popup', (_e, pos) => {
 });
 
 // ---------- data, Claude and GitHub ----------
-let store, tools, runner, github, guides, builder;
+let store, tools, runner, github, guides, builder, sync, device;
 const usageFile = () => path.join(app.getPath('userData'), 'usage.json');
 let usage = {};
 const toWin = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
@@ -234,14 +235,21 @@ async function setupServices() {
     getUsage: () => usage,
     setUsage: (u) => { usage = u; try { fs.writeFileSync(usageFile(), JSON.stringify(u)); } catch { /* fine */ } },
   });
+  device = loadDevice(app.getPath('userData'));
+  github = new GitHub(app.getPath('userData'), store);
+  await github.load();
+  // Two-laptop sync: download the other laptop's changes, combine, upload (see sync.js).
+  sync = new Sync({ store, device, net: (a) => github.git(a), canSync: () => github.linked(), busy: () => !!(runner && runner.active) });
+  sync.on('state', (st) => toWin('sync', st));
+  sync.on('pulled', () => { guides.emit('changed', null); builder.afterPull().catch(() => {}); });
   // Guides build on their own Claude Code run, so the course chat stays free meanwhile.
-  guides = new GuideStore(store);
+  guides = new GuideStore(store, device);
   const guideRunner = new ClaudeRunner({
     store, tools,
     getUsage: () => usage,
     setUsage: (u) => { usage = u; try { fs.writeFileSync(usageFile(), JSON.stringify(u)); } catch { /* fine */ } toWin('usage', u); },
   });
-  builder = new GuideBuilder({ guides, store, runner: guideRunner, getUsage: () => usage, onCommit: () => backup() });
+  builder = new GuideBuilder({ guides, store, runner: guideRunner, device, getUsage: () => usage, onCommit: () => backup(), sync: () => sync.soon() });
   guides.on('changed', async () => toWin('guides:changed', await guides.list()));
   builder.events.on('part', (p) => toWin('guide:part', p));
   // A note from the system when a guide is ready (or gets stuck) while you're in another window.
@@ -250,35 +258,48 @@ async function setupServices() {
     new Notification({ title: g.status === 'done' ? 'Your guide is ready' : 'A guide couldn\'t finish', body: g.title }).show();
   });
   builder.events.on('claude', ({ id, piece, ev }) => { if (ev.type === 'step' && ev.step.state === 'running') toWin('guide:step', { id, piece, label: ev.step.label }); if (ev.type === 'usage') toWin('usage', ev.usage); });
-  github = new GitHub(app.getPath('userData'), store);
-  await github.load();
-  // Connected before, but this data folder isn't linked yet (new folder, or a fresh start): link it.
-  if (github.token) {
-    const origin = await store.runGit(['remote', 'get-url', 'origin']);
-    if (!origin.ok) github.link().catch(() => {});
-  }
   store.on('changed', async () => toWin('data:changed', { courses: await store.listCourses(), inbox: await store.inbox() }));
-  builder.pickUp().catch(() => {});
+  // Connected before, but this data folder isn't linked yet (new folder, or a fresh start): link it.
+  if (github.token && !(await github.linked())) await store.exclusive(() => github.link()).catch(() => {});
+  // Sync on open (then carry on any guide that's this laptop's to build), every 2 minutes, and
+  // when you come back to the window.
+  sync.soon().then(() => builder.pickUp()).catch(() => {});
+  setInterval(() => sync.now().catch(() => {}), 2 * 60e3);
+  let lastFocus = 0;
+  app.on('browser-window-focus', () => { if (Date.now() - lastFocus > 20e3) { lastFocus = Date.now(); sync.now().catch(() => {}); } });
 }
 
-// Save to GitHub in the background after any change.
-const backup = () => { if (github && github.token) github.push().then((ok) => toWin('github:pushed', { ok })); };
+// Save to GitHub in the background after any change (and bring down the other laptop's).
+const backup = () => { if (sync) sync.now().catch(() => {}); };
+// Writes that become one Undo step: done inside the history queue so a sync can't split them.
+const step = (fn) => store.exclusive(fn);
 // Quiz scores and typed answers are saved straight away, and backed up once things go quiet.
 let progressTimer = null;
 const progressDirty = () => { clearTimeout(progressTimer); progressTimer = setTimeout(flushProgress, 45e3); };
 async function flushProgress() { clearTimeout(progressTimer); progressTimer = null; if (store && await store.commit('Quiz progress')) backup(); }
 
+// Link this laptop's data folder to GitHub, then sync straight away (a second laptop gets
+// everything from the first; a laptop with its own courses has them combined).
+async function linkAndSync() {
+  const st = await store.exclusive(() => github.link());
+  await sync.now();
+  builder.pickUp().catch(() => {});
+  return st;
+}
+
 const handlers = {
   'app:state': async () => ({
     courses: await store.listCourses(), inbox: await store.inbox(), usage,
     github: github.state(), claude: await runner.status(), dataDir: store.dir, version: app.getVersion(),
+    device: { id: device.id, name: device.name }, sync: sync.state,
     guides: await guides.list(), subjects: Object.fromEntries(Object.entries(SUBJECTS).map(([k, v]) => [k, v.name])),
   }),
   'claude:status': () => runner.status(),
-  'claude:run': (_e, req) => {
+  'claude:run': async (_e, req) => {
+    await sync.soon(5000); // the other laptop's latest first, so Claude changes the current version
     runner.run(req, (ev) => {
       toWin('claude:event', ev);
-      if (ev.type === 'done' && ev.stepId) backup();
+      if (ev.type === 'done') { sync.idle(); if (ev.stepId) backup(); }
       if (ev.type === 'done' && ev.ok && win && !win.isFocused() && Notification.isSupported()) {
         new Notification({ title: 'Andromeda', body: ev.changes && ev.changes.length ? `${ev.changes.length} change${ev.changes.length === 1 ? '' : 's'} saved` : 'Claude replied' }).show();
       }
@@ -287,10 +308,12 @@ const handlers = {
   },
   'claude:stop': () => runner.stop(),
   // Only ever started by the user clicking Find dates.
-  'dates:find': (_e, req) => { runner.findDates(req, (ev) => toWin('claude:event', ev)); return true; },
+  'dates:find': async (_e, req) => { await sync.soon(5000); runner.findDates(req, (ev) => { toWin('claude:event', ev); if (ev.type === 'done') sync.idle(); }); return true; },
   'dates:add': async (_e, { courseId, items }) => {
-    const changes = await store.addFoundDates(courseId, items);
-    const stepId = changes.length ? await store.commit(`Added ${changes.length} date${changes.length === 1 ? '' : 's'} from a document`) : null;
+    const { changes, stepId } = await step(async () => {
+      const ch = await store.addFoundDates(courseId, items);
+      return { changes: ch, stepId: ch.length ? await store.commitNow(`Added ${ch.length} date${ch.length === 1 ? '' : 's'} from a document`) : null };
+    });
     await store.writeSummary();
     store.emit('changed');
     if (stepId) backup();
@@ -299,10 +322,12 @@ const handlers = {
   // The user's Yes or No for a delete. Only a Yes from the window can delete anything.
   'confirm:answer': async (_e, { pending, yes }) => {
     if (!yes) return { changes: [] };
-    const changes = pending.kind === 'delete_course'
-      ? await store.deleteCourse(pending.courseId)
-      : await store.removeFiles(pending.courseId, pending.files || []);
-    const stepId = await store.commit(pending.kind === 'delete_course' ? `Deleted ${pending.course}` : `Removed files from ${pending.course}`);
+    const { changes, stepId } = await step(async () => {
+      const ch = pending.kind === 'delete_course'
+        ? await store.deleteCourse(pending.courseId)
+        : await store.removeFiles(pending.courseId, pending.files || []);
+      return { changes: ch, stepId: await store.commitNow(pending.kind === 'delete_course' ? `Deleted ${pending.course}` : `Removed files from ${pending.course}`) };
+    });
     await store.writeSummary();
     store.emit('changed');
     backup();
@@ -317,8 +342,10 @@ const handlers = {
   // Dropped straight onto a course card: filed with no Claude needed.
   'files:attachTo': async (_e, { courseId, paths }) => {
     const names = await store.receive(paths);
-    const changes = await store.attachFiles(courseId, names, extract);
-    const stepId = await store.commit(`Added files to ${changes[0] ? changes[0].course : 'a course'}`);
+    const { changes, stepId } = await step(async () => {
+      const ch = await store.attachFiles(courseId, names, extract);
+      return { changes: ch, stepId: await store.commitNow(`Added files to ${ch[0] ? ch[0].course : 'a course'}`) };
+    });
     await store.writeSummary();
     store.emit('changed');
     backup();
@@ -326,9 +353,11 @@ const handlers = {
   },
   'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
   'github:start': () => github.start(),
-  'github:wait': async () => { await github.wait(); return github.link(); },
+  'github:wait': async () => { await github.wait(); return linkAndSync(); },
   'github:cancel': () => github.cancel(),
-  'github:retryLink': () => github.link(),
+  'github:retryLink': () => linkAndSync(),
+  'sync:now': async () => { await sync.now(); return sync.state; },
+  'device:rename': (_e, name) => device.rename(name),
   'guides:get': (_e, id) => guides.get(id),
   'guides:guess': (_e, name) => guessSubjects(name),
   'guides:create': async (_e, plan) => { const g = await guides.create(plan); backup(); builder.build(g.id).catch(() => {}); return g; },

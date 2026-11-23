@@ -4,7 +4,7 @@
   if (window.andromeda) return;
   const P = window.AndromedaPreview;
   const q = new URLSearchParams(location.search);
-  const listeners = { claude: [], data: [], pushed: [], guides: [], part: [], step: [], usage: [] };
+  const listeners = { claude: [], data: [], sync: [], guides: [], part: [], step: [], usage: [] };
   const emit = (k, v) => listeners[k].forEach((f) => f(v));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const year = new Date().getFullYear();
@@ -19,6 +19,10 @@
   }));
   let inbox = [];
   const usage = { fiveHour: { pct: 0.23, resetsAt: Date.now() + 2.2 * 3600e3 }, week: { pct: 0.41, resetsAt: Date.now() + 3 * 86400e3 } };
+  const device = { id: 'dev-a', name: 'Jazzy MacBook Air' };
+  let sync = q.has('offline') ? { state: 'offline', message: 'Saved on this laptop. Will sync when GitHub can be reached.', at: Date.now() - 9 * 60e3 }
+    : q.has('syncerr') ? { state: 'error', message: 'Couldn\'t upload to GitHub: the connection was reset.', at: Date.now() - 30 * 60e3 }
+    : { state: 'ok', message: '', at: Date.now() - 3 * 60e3 };
   const github = q.has('setup') ? { connected: false } : { connected: true, login: 'JazzyXD', repo: 'JazzyXD/Andromeda-data' };
 
   async function fakeRun({ prompt }) {
@@ -58,6 +62,14 @@
   const SUBJ = { procedural: 'Procedures and calculations', rules: 'Rules and standards', sciences: 'Sciences', humanities: 'Humanities', 'social-sciences': 'Social sciences' };
   let guides = [];
   const gparts = {}, gprog = {};
+  // ?lock: a guide building on the other laptop. ?stale: the same, but that laptop went quiet.
+  if (q.has('lock') || q.has('stale')) {
+    guides.push({ id: 'g-other', title: 'Income Tax 2: Midterm', badge: 'lyra', courseId: 'income-tax-2', courseName: 'Income Tax 2', test: null, weeks: [], subjects: ['procedural'], model: 'opus', effort: 'high',
+      pieces: [{ id: 'w1', label: 'Chapter 12', status: 'done' }, { id: 'w2', label: 'Chapter 13', status: 'building' }, { id: 'finish', label: 'Final quiz', status: 'waiting' }, { id: 'start', label: 'Opening', status: 'waiting' }],
+      status: 'building', pausedUntil: null, created: new Date().toISOString(), results: [],
+      lock: { device: 'dev-b', name: 'School laptop', until: q.has('stale') ? Date.now() - 60e3 : Date.now() + 30 * 60e3 } });
+    gparts['g-other'] = {}; gprog['g-other'] = {};
+  }
   const sampleWeek = (n, label) => `<h2 id="w${n}">${label}: Taxable income for corporations</h2><p class="meta">Slides: Chapter ${11 + n} slides.pptx</p>
 <h3 id="w${n}-t1">Net income to taxable income</h3><p><b>Net income for tax purposes</b> starts from accounting income and adjusts for items the Act treats differently. The adjustments add back amounts that were deducted for accounting but aren't allowed for tax, and subtract amounts the Act allows that accounting didn't record.</p>
 <div class="box key"><div class="label">KEY: Division C deductions <span class="src">slide 6</span></div><p>Taxable income equals net income for tax purposes minus Division C deductions, such as net capital losses carried over and charitable donations.</p></div>
@@ -84,7 +96,7 @@
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.3.7', guides, subjects: SUBJ }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.4.0', guides, subjects: SUBJ, device: { ...device }, sync }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
@@ -122,7 +134,9 @@
     githubStart: async () => ({ code: 'WDJB-MJHT', url: 'https://github.com/login/device' }),
     githubWait: async () => { await sleep(1500); github.connected = true; github.login = 'JazzyXD'; github.repo = 'JazzyXD/Andromeda-data'; return github; },
     githubCancel: async () => {}, githubRetry: async () => github,
-    onPushed: (f) => listeners.pushed.push(f),
+    syncNow: async () => { emit('sync', sync = { ...sync, state: 'syncing' }); await sleep(900); sync = { state: 'ok', message: '', at: Date.now() }; emit('sync', sync); return sync; },
+    onSync: (f) => listeners.sync.push(f),
+    renameDevice: async (name) => (device.name = String(name).trim().slice(0, 40) || 'This laptop'),
     zoomGet: async () => ({ mode: 'auto', factor: 1, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] }),
     zoomSet: async (m) => ({ mode: m, factor: m === 'auto' ? 1 : m, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] }),
     zoomStep: async () => ({ mode: 'auto', factor: 1, auto: 1, levels: [] }),

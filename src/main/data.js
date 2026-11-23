@@ -49,6 +49,14 @@ class DataStore extends EventEmitter {
     super();
     this.dir = dir;
     this.git = null;
+    this.queue = Promise.resolve();
+  }
+
+  // Anything that changes the history runs one at a time, so a sync never lands in the middle of a save.
+  exclusive(fn) {
+    const p = this.queue.then(fn, fn);
+    this.queue = p.catch(() => {});
+    return p;
   }
 
   p(...parts) { return path.join(this.dir, ...parts); }
@@ -64,10 +72,20 @@ class DataStore extends EventEmitter {
     if (!fs.existsSync(ignore)) await fsp.writeFile(ignore, '.andromeda/\n.DS_Store\n');
     this.git = await bin.find('git');
     if (this.git && !fs.existsSync(this.p('.git'))) {
+      await this.ensureAttrs(false);
       await this.runGit(['init', '-q', '-b', 'main']);
       await this.commit('Start Andromeda data');
-    }
+    } else await this.ensureAttrs();
     await this.writeSummary();
+  }
+
+  // Course and guide files are combined by Andromeda itself when both laptops changed them
+  // (see sync.js), so Git is told never to half-merge them line by line.
+  async ensureAttrs(save = true) {
+    const attrs = this.p('.gitattributes');
+    if (fs.existsSync(attrs)) return;
+    await fsp.writeFile(attrs, 'courses/*/course.json merge=binary\nguides/*/guide.json merge=binary\n');
+    if (save && this.git) await this.commitNow('Two-laptop sync settings');
   }
 
   // ---------- history ----------
@@ -77,7 +95,10 @@ class DataStore extends EventEmitter {
   }
 
   // Save everything changed since the last save as one step. Returns its id, or null if nothing changed.
-  async commit(message) {
+  commit(message) { return this.exclusive(() => this.commitNow(message)); }
+
+  // The same, for code that's already inside exclusive().
+  async commitNow(message) {
     if (!this.git) return null;
     await this.runGit(['add', '-A']);
     const st = await this.runGit(['status', '--porcelain']);
@@ -89,7 +110,9 @@ class DataStore extends EventEmitter {
   }
 
   // Undo one saved step by adding a new step that reverses it, so nothing is ever lost.
-  async undo(stepId) {
+  undo(stepId) { return this.exclusive(() => this.undoNow(stepId)); }
+
+  async undoNow(stepId) {
     if (!this.git || !/^[0-9a-f]{7,40}$/.test(stepId || '')) return { ok: false, message: 'Nothing to undo.' };
     const r = await this.runGit(['revert', '--no-edit', stepId]);
     if (!r.ok) {

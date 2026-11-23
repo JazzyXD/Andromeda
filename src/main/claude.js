@@ -190,13 +190,13 @@ Call propose_dates exactly once with everything, then reply with one short line.
     child.stderr.on('data', (d) => { errText += String(d); });
 
     child.on('close', async (code) => {
-      this.active = null;
       handle.close();
       await fsp.rm(sysFile, { force: true }).catch(() => {});
       await fsp.rm(mcpFile, { force: true }).catch(() => {});
       const run = handle.run;
       let stepId = null;
       if (run.changes.length) stepId = await this.store.commit('Prompt: ' + prompt.slice(0, 120));
+      this.active = null; // only now, so a sync can't split Claude's changes from their Undo step
       if (run.changes.length) this.store.emit('changed');
 
       let refused = false, text = shown;

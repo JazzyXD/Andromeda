@@ -116,28 +116,24 @@ class GitHub {
     if (!f.ok) throw new Error('Couldn\'t download from GitHub: ' + f.stderr.slice(0, 160));
     const remoteMain = await this.store.runGit(['rev-parse', '--verify', '-q', 'origin/main']);
     if (remoteMain.ok) {
+      // A fresh laptop (nothing made here yet): simply take what's on GitHub. Otherwise the sync
+      // that runs straight after combines this laptop's things with GitHub's.
       const courses = await this.store.listCourses();
-      if (!courses.length) {
-        // A fresh laptop: take what's already on GitHub.
+      const guides = await fsp.readdir(this.store.p('guides')).catch(() => []);
+      if (!courses.length && !guides.length) {
         await this.store.runGit(['reset', '-q', '--hard', 'origin/main']);
-      } else {
-        // Both sides have something: combine them (courses live in separate folders, so this is clean).
-        const m = await this.store.runGit(['merge', '-q', '--no-edit', '--allow-unrelated-histories', 'origin/main']);
-        if (!m.ok) { await this.store.runGit(['merge', '--abort']); throw new Error('This laptop and GitHub both have changes that clash. Two-laptop syncing in stage 4 will handle this.'); }
+        await this.store.ensureAttrs();
       }
+      await this.store.runGit(['branch', '-q', '--set-upstream-to=origin/main', 'main']);
     }
-    await this.store.runGit(['branch', '-q', '--set-upstream-to=origin/main', 'main']);
-    await this.push();
     this.store.emit('changed');
     return this.state();
   }
 
-  // Back up to GitHub after a change. Quietly tries again next time if offline.
-  async push() {
+  // Linked: signed in, and the data folder points at the repo.
+  async linked() {
     if (!this.token) return false;
-    const r = await this.git(['push', '-q', '-u', 'origin', 'main']);
-    this.lastPush = { ok: r.ok, at: Date.now() };
-    return r.ok;
+    return (await this.store.runGit(['remote', 'get-url', 'origin'])).ok;
   }
 }
 
