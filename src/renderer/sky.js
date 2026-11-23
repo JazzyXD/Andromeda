@@ -36,7 +36,7 @@
       name: 'Ursa Minor',
       pts: [[1250, 150, 1.7], [1196, 214, 0.9], [1150, 270, 0.9], [1118, 330, 0.9], [1166, 398, 1.3], [1100, 436, 1.1], [1070, 370, 0.85]],
       edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]],
-      at: [250, 150],
+      at: [4340, 1857], // far side of the sky from Ursa Major, so Settings feels like its own place
     },
     orion: {
       name: 'Orion',
@@ -139,6 +139,8 @@
   function createSky(canvas, opts) {
     const ctx = canvas.getContext('2d', { alpha: false });
     const reduce = opts.reduceMotion;
+    // How much bright stars dim and brighten: 0 is still, 0.3 is the most the slider allows.
+    const twinkleAmount = () => (opts.twinkle ? opts.twinkle() : 0.06);
     const stars = buildStars();
     const band = buildBand();
     const COLORS = ['#DCE2F2', '#F3E6D2', '#CFE0FF'];
@@ -198,7 +200,7 @@
           const x = s.x + ox, y = s.y + oy;
           if (x < -4 || y < -4 || x > W + 4 || y > H + 4) continue;
           let a = s.a;
-          if (twinkle) a *= 0.72 + 0.28 * Math.sin(now * 0.001 * s.sp + s.ph);
+          if (twinkle) a *= 1 - twinkle * (0.5 + 0.5 * Math.sin(now * 0.001 * s.sp + s.ph));
           ctx.globalAlpha = a * alpha;
           if (s.r < 0.9) ctx.fillRect(x - s.r, y - s.r, s.r * 2, s.r * 2);
           else { ctx.beginPath(); ctx.arc(x, y, s.r, 0, 6.2832); ctx.fill(); }
@@ -245,7 +247,7 @@
       const moving = pan || fade || lines.p < 1 || lines.out;
       // Idle sky only needs a gentle twinkle: redraw about 24 times a second.
       if (!moving && !dirty) {
-        if (rm) return;
+        if (rm || !twinkleAmount()) return;
         if (now - last < 42) return;
       }
       last = now; dirty = false;
@@ -290,7 +292,7 @@
       ctx.globalAlpha = 1;
 
       drawStars(stars.faint, layerCam(0.92), 0.55, now, false);
-      drawStars(stars.bright, layerCam(1), 1, now, !rm);
+      drawStars(stars.bright, layerCam(1), 1, now, rm ? 0 : twinkleAmount());
 
       for (const [key, c] of Object.entries(CONSTELLATIONS)) {
         let p = 0, a = 0;

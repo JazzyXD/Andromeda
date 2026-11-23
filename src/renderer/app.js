@@ -19,7 +19,11 @@
   let motionPref = store.get('motion', 'system'); // system | full | reduced
   const reduced = () => motionPref === 'reduced' || (motionPref === 'system' && media.matches);
 
-  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced });
+  // Twinkle strength, 0 to 100. The default is barely noticeable.
+  let twinkle = store.get('twinkle', 20);
+  const twinkleWord = (v) => (v === 0 ? 'Off' : v <= 25 ? 'Barely' : v <= 60 ? 'Gentle' : 'Lively');
+
+  const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.3 });
 
   // ---------- little constellation drawings for cards ----------
   const f = (n) => Math.round(n * 10) / 10;
@@ -101,6 +105,9 @@
         <div class="row"><span class="pill">Animations</span>
           <div class="seg" role="group" aria-label="Motion">${motionBtn('system', 'Match system')}${motionBtn('full', 'Full')}${motionBtn('reduced', 'Reduced')}</div>
         </div>
+        <div class="row"><label class="pill" for="twinkle">Star twinkle</label>
+          <div class="slide"><input type="range" id="twinkle" min="0" max="100" step="1" value="${twinkle}"><span id="twinkle-val">${twinkleWord(twinkle)}</span></div>
+        </div>
       </div>
       <div class="panel m">
         <h2>Claude</h2>
@@ -121,6 +128,16 @@
       $$('[data-motion]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       sky.redraw();
     }));
+    const tw = $('#twinkle');
+    const paint = () => tw.style.setProperty('--fill', tw.value + '%');
+    paint();
+    tw.addEventListener('input', () => {
+      twinkle = +tw.value;
+      $('#twinkle-val').textContent = twinkleWord(twinkle);
+      paint();
+      sky.redraw();
+    });
+    tw.addEventListener('change', () => store.set('twinkle', twinkle));
   }
 
   renderCourses();
