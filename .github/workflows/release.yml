@@ -1,0 +1,67 @@
+# Builds the Windows and Mac installers and posts them as a GitHub release, only when asked:
+# press "Run workflow" on the repo's Actions page (or Claude starts it when you say to release).
+# Nothing builds on its own, so no GitHub minutes go to versions you didn't want released.
+# The release is named after the version in package.json. Installed copies of Andromeda check
+# these releases for updates.
+# The installers aren't signed (signing costs money every year), so Windows and macOS each warn
+# the first time; see the README for the one-time steps.
+name: Build installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: What's new (shown in the update notice)
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the installer
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Post the release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NOTES="${NOTES:-Andromeda $VERSION}"
+          gh release create "v$VERSION" out/*.exe out/*.dmg --target "$GITHUB_SHA" --title "Andromeda $VERSION" --notes "$NOTES"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
