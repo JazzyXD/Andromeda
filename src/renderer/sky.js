@@ -17,10 +17,10 @@
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
   // ---------- the sky's layout (world units = screen pixels at rest) ----------
-  const WORLD = { x0: -900, y0: -500, x1: 6100, y1: 3100 };
+  const WORLD = { x0: -1500, y0: -900, x1: 6700, y1: 3900 };
 
   // Centre line of the Milky Way across the world (Catmull-Rom through these points).
-  const BAND = [[-900, 1950], [-300, 1650], [300, 1380], [1300, 720], [2300, 1250], [3500, 1900], [4700, 2250], [6100, 2600]];
+  const BAND = [[-1500, 2250], [-900, 1950], [-300, 1650], [300, 1380], [1300, 720], [2300, 1250], [3500, 1900], [4700, 2250], [6100, 2600], [6700, 2780]];
   const CORE = [260, 1400]; // where the band glows gold, like the galactic core
 
   // Constellations: points are [x, y, brightness]; edges join point indexes in tracing order.
@@ -48,6 +48,32 @@
 
   // Each view looks at one constellation. The constellation sits up and to the right, like the mockups.
   const VIEWS = { courses: 'ursaMajor', guides: 'orion', settings: 'ursaMinor' };
+
+  // Each course's constellation, from the shared list, drawn 3x larger in the sky.
+  const SHARED = (window.AndromedaConstellations && window.AndromedaConstellations.COURSE) || {};
+  // They're spread along the Milky Way, alternating just above and below it (like Lyra, Cygnus and
+  // Aquila in the real sky), and kept clear of the three tab constellations.
+  {
+    const keys = Object.keys(SHARED), line = bandSamples(40);
+    const avoid = [[1171, 1070], [3967, 1886], [5500, 2150]];
+    keys.forEach((key, k) => {
+      const c = SHARED[key];
+      let i = Math.floor(((k + 0.5) / keys.length) * (line.length - 1)), side = k % 2 ? 1 : -1, cx, cy;
+      for (let tries = 0; tries < 8; tries++) {
+        const [bx, by] = line[i];
+        cx = bx; cy = by + side * 330;
+        if (avoid.every(([ax, ay]) => Math.hypot(cx - ax, cy - ay) > 700)) break;
+        side = -side; if (tries % 2) i = Math.min(line.length - 1, i + 6);
+      }
+      avoid.push([cx, cy]);
+      const pts = c.p.map(([x, y, m]) => [x * 3, y * 3, (m || 1) * 1.05]);
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      const at = [cx - (Math.min(...xs) + Math.max(...xs)) / 2, cy - (Math.min(...ys) + Math.max(...ys)) / 2];
+      CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at, course: true };
+    });
+  }
+  // A view id ('courses'), or a course constellation ('con:lyra').
+  const conOf = (id) => (CONSTELLATIONS[id] ? id : VIEWS[id]);
 
   // Place constellation points in world space.
   for (const c of Object.values(CONSTELLATIONS)) {
@@ -81,7 +107,7 @@
     const W = WORLD.x1 - WORLD.x0, H = WORLD.y1 - WORLD.y0;
     const faint = [], bright = [];
     // Even field of faint stars.
-    for (let i = 0; i < 3200; i++) {
+    for (let i = 0; i < 4800; i++) {
       faint.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.35 + r() * 0.6, a: 0.3 + r() * 0.5, c: r() < 0.15 ? 1 : r() < 0.25 ? 2 : 0 });
     }
     // Thick star clouds along the Milky Way.
@@ -92,7 +118,7 @@
       faint.push({ x: bx + gauss(r) * spread * 0.6, y: by + gauss(r) * spread, r: 0.3 + r() * 0.5, a: 0.25 + r() * 0.5, c: r() < 0.2 ? 1 : 0 });
     }
     // Scattered bright stars that twinkle.
-    for (let i = 0; i < 210; i++) {
+    for (let i = 0; i < 300; i++) {
       bright.push({ x: WORLD.x0 + r() * W, y: WORLD.y0 + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, seed: 1000 + i, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
     }
     return { faint, bright };
@@ -157,9 +183,10 @@
     let still = null, stillKey = '';
 
     function camFor(id) {
-      const c = CONSTELLATIONS[VIEWS[id]].center;
-      const fx = W < 1100 ? 0.74 : 0.8;
-      return [c[0] - (fx - 0.5) * W, c[1] - (0.3 - 0.5) * H];
+      const k = CONSTELLATIONS[conOf(id)], c = k.center;
+      // Tab constellations sit up and to the right; a course's sits lower, in the open space under its page.
+      const fx = k.course ? 0.7 : W < 1100 ? 0.74 : 0.8, fy = k.course ? 0.7 : 0.3;
+      return [c[0] - (fx - 0.5) * W, c[1] - (fy - 0.5) * H];
     }
 
     function resize() {
@@ -303,7 +330,7 @@
         const t = clamp((now - pan.start) / pan.dur, 0, 1);
         const e = easeInOut(t);
         cam = [lerp(pan.from[0], pan.to[0], e), lerp(pan.from[1], pan.to[1], e)];
-        if (t >= 1) { const done = pan.resolve; pan = null; lines = { id: VIEWS[view], p: 0, start: now, out: null }; done && done(); }
+        if (t >= 1) { const done = pan.resolve; pan = null; lines = { id: conOf(view), p: 0, start: now, out: null }; done && done(); }
       }
       if (fade) {
         const t = clamp((now - fade.start) / fade.dur, 0, 1);
@@ -360,7 +387,7 @@
         view = id;
         if (instant || !prev) {
           cam = target; pan = null;
-          lines = { id: VIEWS[id], p: instant ? 1 : 0, start: performance.now(), out: null };
+          lines = { id: conOf(id), p: instant ? 1 : 0, start: performance.now(), out: null };
           dirty = true; resolve({ dx: 0, dy: 0 }); return;
         }
         const dx = cam[0] - target[0], dy = cam[1] - target[1];
@@ -371,7 +398,7 @@
         if (reduce()) {
           // Reduced motion: a quiet crossfade instead of a pan.
           fade = { from: alpha, to: 0, start: performance.now(), dur: 160, resolve: () => {
-            cam = target; lines = { id: VIEWS[id], p: 1, out: null };
+            cam = target; lines = { id: conOf(id), p: 1, out: null };
             fade = { from: 0, to: 1, start: performance.now(), dur: 220, resolve: () => resolve(dir) };
           } };
           return;
@@ -395,7 +422,7 @@
     resize();
     requestAnimationFrame(frame);
 
-    return { goTo, plan, constellationName: (id) => CONSTELLATIONS[VIEWS[id]].name, redraw: () => { dirty = true; } };
+    return { goTo, plan, constellationName: (id) => CONSTELLATIONS[conOf(id)].name, redraw: () => { dirty = true; } };
   }
 
   window.AndromedaSky = { createSky };

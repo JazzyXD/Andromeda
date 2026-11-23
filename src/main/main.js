@@ -1,7 +1,12 @@
 // Andromeda main process: one native-feeling window over the night sky.
-const { app, BrowserWindow, Menu, shell, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, screen, dialog, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { DataStore } = require('./data');
+const { createToolServer } = require('./tools');
+const { extract } = require('./extract');
+const { ClaudeRunner } = require('./claude');
+const { GitHub } = require('./github');
 
 const isMac = process.platform === 'darwin';
 const isDev = !app.isPackaged || process.argv.includes('--dev');
@@ -172,6 +177,91 @@ ipcMain.on('menu:popup', (_e, pos) => {
   if (menu && win) menu.popup({ window: win, x: Math.round(pos?.x || 20), y: Math.round(pos?.y || 56) });
 });
 
+// ---------- data, Claude and GitHub ----------
+let store, tools, runner, github;
+const usageFile = () => path.join(app.getPath('userData'), 'usage.json');
+let usage = {};
+const toWin = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
+
+async function setupServices() {
+  const dataDir = process.env.ANDROMEDA_DATA || path.join(app.getPath('home'), 'Andromeda');
+  store = new DataStore(dataDir);
+  await store.init();
+  tools = createToolServer(store, extract);
+  await tools.ready;
+  try { usage = JSON.parse(fs.readFileSync(usageFile(), 'utf8')); } catch { usage = {}; }
+  runner = new ClaudeRunner({
+    store, tools,
+    getUsage: () => usage,
+    setUsage: (u) => { usage = u; try { fs.writeFileSync(usageFile(), JSON.stringify(u)); } catch { /* fine */ } },
+  });
+  github = new GitHub(app.getPath('userData'), store);
+  await github.load();
+  store.on('changed', async () => toWin('data:changed', { courses: await store.listCourses(), inbox: await store.inbox() }));
+}
+
+// Save to GitHub in the background after any change.
+const backup = () => { if (github && github.token) github.push().then((ok) => toWin('github:pushed', { ok })); };
+
+const handlers = {
+  'app:state': async () => ({
+    courses: await store.listCourses(), inbox: await store.inbox(), usage,
+    github: github.state(), claude: await runner.status(), dataDir: store.dir,
+  }),
+  'claude:status': () => runner.status(),
+  'claude:run': (_e, req) => {
+    runner.run(req, (ev) => {
+      toWin('claude:event', ev);
+      if (ev.type === 'done' && ev.stepId) backup();
+      if (ev.type === 'done' && ev.ok && win && !win.isFocused() && Notification.isSupported()) {
+        new Notification({ title: 'Andromeda', body: ev.changes && ev.changes.length ? `${ev.changes.length} change${ev.changes.length === 1 ? '' : 's'} saved` : 'Claude replied' }).show();
+      }
+    });
+    return true;
+  },
+  'claude:stop': () => runner.stop(),
+  // The user's Yes or No for a delete. Only a Yes from the window can delete anything.
+  'confirm:answer': async (_e, { pending, yes }) => {
+    if (!yes) return { changes: [] };
+    const changes = pending.kind === 'delete_course'
+      ? await store.deleteCourse(pending.courseId)
+      : await store.removeFiles(pending.courseId, pending.files || []);
+    const stepId = await store.commit(pending.kind === 'delete_course' ? `Deleted ${pending.course}` : `Removed files from ${pending.course}`);
+    await store.writeSummary();
+    store.emit('changed');
+    backup();
+    return { changes, stepId };
+  },
+  'undo': async (_e, stepId) => { const r = await store.undo(stepId); if (r.ok) backup(); return r; },
+  'files:pick': async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Slides and documents', extensions: ['pdf', 'pptx', 'ppt', 'txt', 'md'] }] });
+    return r.canceled ? [] : r.filePaths;
+  },
+  'files:receive': async (_e, paths) => { await store.receive(paths); store.emit('changed'); return store.inbox(); },
+  // Dropped straight onto a course card: filed with no Claude needed.
+  'files:attachTo': async (_e, { courseId, paths }) => {
+    const names = await store.receive(paths);
+    const changes = await store.attachFiles(courseId, names, extract);
+    const stepId = await store.commit(`Added files to ${changes[0] ? changes[0].course : 'a course'}`);
+    await store.writeSummary();
+    store.emit('changed');
+    backup();
+    return { changes, stepId };
+  },
+  'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
+  'github:start': () => github.start(),
+  'github:wait': async () => { await github.wait(); return github.link(); },
+  'github:cancel': () => github.cancel(),
+  'github:retryLink': () => github.link(),
+  'open:external': (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); },
+  'open:dataFolder': () => shell.openPath(store.dir),
+};
+for (const [name, fn] of Object.entries(handlers)) {
+  ipcMain.handle(name, async (...a) => {
+    try { return { ok: true, value: await fn(...a) }; } catch (e) { return { ok: false, error: e.message }; }
+  });
+}
+
 // ---------- app lifecycle ----------
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -189,8 +279,9 @@ if (!app.requestSingleInstanceLock()) {
     credits: 'A night-sky learning app. Built with Claude.',
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     buildMenu();
+    await setupServices();
     createWindow();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });

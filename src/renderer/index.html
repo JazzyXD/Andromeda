@@ -22,18 +22,29 @@
       <button type="button" role="tab" data-view="guides" aria-selected="false">Guides</button>
       <button type="button" role="tab" data-view="settings" aria-selected="false">Settings</button>
     </nav>
-    <div class="sync" title="Sync between your laptops comes in a later stage">
-      <span class="dot off"></span><span>Sync not set up</span>
-    </div>
+    <div class="sync" id="sync"><span class="dot off"></span><span>Sync arrives in stage 4</span></div>
   </header>
 
   <main class="stage" id="stage">
     <section class="view" id="view-courses" data-view="courses" role="tabpanel" aria-label="Courses"></section>
+    <section class="view" id="view-course" data-view="course" aria-label="Course" hidden></section>
     <section class="view" id="view-guides" data-view="guides" role="tabpanel" aria-label="Guides" hidden></section>
     <section class="view" id="view-settings" data-view="settings" role="tabpanel" aria-label="Settings" hidden></section>
   </main>
 
   <div class="dock">
+    <section class="convo glass" id="convo" aria-label="Conversation with Claude" hidden>
+      <div class="convo-head">
+        <span class="handle" aria-hidden="true"></span>
+        <span class="ctx"><span class="ctx-dot"></span><span id="convo-chip">All courses</span></span>
+        <div class="convo-btns">
+          <button type="button" class="icon-btn" id="convo-new" aria-label="New conversation"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+          <button type="button" class="icon-btn" id="convo-close" aria-label="Close and clear the conversation"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+        </div>
+      </div>
+      <div class="convo-body selectable" id="convo-body"><div id="convo-log"></div></div>
+    </section>
+    <div class="chips" id="chips" hidden></div>
     <form class="prompt" id="prompt" autocomplete="off">
       <button type="button" class="icon-btn" id="attach" aria-label="Attach slides or files">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>
@@ -41,13 +52,14 @@
       <label for="prompt-input" class="sr">Ask Claude</label>
       <textarea id="prompt-input" rows="1" placeholder="Add a course, drop in slides, or set a test date…"></textarea>
       <button type="submit" class="send" aria-label="Send">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+        <svg class="i-send" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+        <svg class="i-stop" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3" fill="currentColor"/></svg>
       </button>
     </form>
     <div class="status">
       <button type="button" class="model" id="model" aria-haspopup="dialog" aria-expanded="false"></button>
       <span class="sep" aria-hidden="true">·</span>
-      <span id="usage">Usage shows once Claude is connected</span>
+      <span id="usage">Usage shows after your first prompt</span>
     </div>
     <div class="model-menu glass" id="model-menu" role="dialog" aria-label="Model and effort" hidden>
       <p class="mm-head">Model</p>
@@ -58,11 +70,14 @@
     </div>
   </div>
 
+  <div class="setup" id="setup" hidden></div>
   <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
 </div>
 
+<script src="../shared/constellations.js"></script>
 <script src="sky.js"></script>
 <script src="data.js"></script>
+<script src="mock.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

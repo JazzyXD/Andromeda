@@ -1,7 +1,7 @@
 {
   "name": "andromeda",
   "productName": "Andromeda",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A night-sky learning app that builds study guides with Claude.",
   "main": "src/main/main.js",
   "private": true,
@@ -12,7 +12,11 @@
     "dist:win": "electron-builder --win"
   },
   "dependencies": {
-    "@fontsource-variable/manrope": "^5.2.5"
+    "@fontsource-variable/manrope": "^5.2.5",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "jszip": "^3.10.2",
+    "unpdf": "^2.2.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "electron": "^45.4.1",
@@ -27,7 +31,6 @@
     },
     "files": [
       "src/**/*",
-      "node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2",
       "package.json"
     ],
     "mac": {

@@ -1,38 +1,35 @@
 # Andromeda
 
-A night-sky learning app for your courses and study guides, built with Claude.
+A night-sky learning app for your courses and study guides, run on your own Claude plan through Claude Code.
 
-## Stage 1 (this preview)
+## What works now (stage 2)
 
-- The window, the hand-drawn moving sky, and the three tabs: Courses, Guides and Settings
-- Sample courses and guides so you can see the layout; your real ones arrive in stage 2
-- The frosted prompt box with the model and effort picker underneath (Claude connects in stage 2)
-- Motion setting in Settings: Match system, Full, or Reduced
+- **First open:** checks Claude Code is installed, and connects GitHub with a short code so your courses are backed up to your private `Andromeda-data` repo.
+- **Courses by prompting:** "Add Income Tax 2, Tue and Thu with Dan Carli", "The final is Dec 15", "Chapter 12 is taxable income for corporations". Claude can only use Andromeda's course tools and read your course files: no commands, no internet, nothing outside your Andromeda folder.
+- **Every change can be undone**, and deleting a course or removing files always asks you first.
+- **Slides:** drop PDFs or PowerPoints onto a course (or anywhere, then say which course). Their text is pulled out once on your laptop, with hidden slides skipped, so Claude reads a cheap text version.
+- **Course pages:** click a card and it grows into the course while the sky pans to that course's constellation.
+- **Usage** under the prompt box, plus the model and effort picker (default Sonnet, medium).
 
-## Try it on a laptop
+Your data lives in an `Andromeda` folder in your home folder.
 
-You need [Node.js](https://nodejs.org) (the LTS version) and Git.
+## Try it
+
+You need [Node.js](https://nodejs.org) (LTS), Git, and [Claude Code](https://code.claude.com/docs/en/setup) signed in (type `claude` in a terminal once).
 
 ```
-git clone https://github.com/JazzyXD/Andromeda.git
+git clone -b stage-2 https://github.com/JazzyXD/Andromeda.git
 cd Andromeda
 npm install
 npm start
 ```
 
-Shortcuts: Ctrl or Cmd + 1, 2, 3 switch tabs. Ctrl or Cmd + K jumps to the prompt box.
+On Windows PowerShell, use `npm.cmd install` and `npm.cmd start`.
 
-## Build an installer
-
-On the Mac: `npm run dist:mac` makes a .dmg in `dist/`.
-On Windows: `npm run dist:win` makes a setup .exe in `dist/`.
-
-The app isn't code-signed, so the first time you open it:
-- **Mac:** right-click Andromeda, choose Open, then Open again.
-- **Windows:** click "More info", then "Run anyway".
+Shortcuts: Ctrl or Cmd + 1, 2, 3 switch tabs. Ctrl or Cmd + K jumps to the prompt box. Esc closes a course page.
 
 ## Where things live
 
-- `src/main/` runs the app window, menus and shortcuts
-- `src/renderer/` is everything you see: `sky.js` draws the sky, `app.js` runs the screens, `styles.css` is the look
-- `build/icon.png` is the app icon
+- `src/main/` the app itself: `claude.js` runs Claude Code locked down, `tools.js` the course tools, `data.js` your courses and their history, `extract.js` slide text, `github.js` backup
+- `src/renderer/` everything you see: `sky.js` draws the sky, `app.js` runs the screens
+- `src/shared/constellations.js` the real constellation shapes used for courses
