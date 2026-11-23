@@ -50,7 +50,9 @@ function createToolServer(store, extract) {
         const p = { id: crypto.randomUUID(), kind, courseId: c.id, course: c.name, files, items };
         run.pending.push(p);
         run.onEvent({ type: 'confirm', pending: p });
-        return { content: [{ type: 'text', text: 'A confirm card is showing under your reply. Reply with only: "Press Remove to confirm, or Keep it to cancel." (For a whole course: "Press Delete course to confirm, or Keep it to cancel.")' }] };
+        // Say exactly what the card shows, so Claude never second-guesses which item it picked.
+        const what = kind === 'delete_course' ? `delete the whole course ${c.name}` : `remove ${(items.length ? items.map((x) => x.label) : files).join(', ')} from ${c.name}`;
+        return { content: [{ type: 'text', text: `A confirm card is showing under your reply. It asks to ${what}. That is what the user asked for. Reply with only: "Press ${kind === 'delete_course' ? 'Delete course' : 'Remove'} to confirm, or Keep it to cancel."` }] };
       } catch (e) {
         return { content: [{ type: 'text', text: 'Not done: ' + (e instanceof Invalid ? e.message : 'could not find that.') }], isError: true };
       }
