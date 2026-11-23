@@ -18,7 +18,8 @@
 
   // ---------- the sky's layout (world units = screen pixels at rest) ----------
   // The sky wraps around left to right like the real one: x0 and x1 are the same place.
-  const WORLD = { x0: -1500, y0: -1600, x1: 6700, y1: 4600 };
+  // One loop round the sky is 9430px (it was 8200 until the course constellations needed more room).
+  const WORLD = { x0: -1500, y0: -1600, x1: 7930, y1: 4600 };
   const PERIOD = WORLD.x1 - WORLD.x0;
   const wrapX = (x) => x - PERIOD * Math.floor((x - WORLD.x0) / PERIOD);
   // The stars first painted between these heights; the strips above and below were added later.
@@ -27,11 +28,14 @@
   // Centre line of the Milky Way around the sky: one long, gentle wave, highest just above Ursa Major
   // and lowest by Ursa Minor (Catmull-Rom through these points). The last point is the first one again,
   // a full turn later, so the band joins up with itself.
+  const WAVE = (x) => 1380 - 580 * Math.cos(2 * Math.PI * (x - 1300) / PERIOD);
+  const WAVE_SLOPE = (x) => 580 * (2 * Math.PI / PERIOD) * Math.sin(2 * Math.PI * (x - 1300) / PERIOD);
   const BAND = Array.from({ length: 11 }, (_, i) => {
-    const x = -1500 + i * 820;
-    return [x, Math.round(1380 - 580 * Math.cos(2 * Math.PI * (x - 1300) / 8200))];
+    const x = WORLD.x0 + i * PERIOD / 10;
+    return [x, Math.round(WAVE(x))];
   });
-  const CORE = [260, 1400]; // where the band glows gold, like the galactic core
+  // Where the band glows gold, like the galactic core.
+  const CORE = [260, Math.round(WAVE(260))];
 
   // Constellations: points are [x, y, brightness]; edges join point indexes in tracing order.
   // Shapes follow the real star patterns, placed by hand.
@@ -40,88 +44,102 @@
       name: 'Ursa Major',
       pts: [[1060, 150, 1.3], [1050, 232, 1.2], [1160, 262, 1.1], [1182, 192, 1], [1262, 182, 1.2], [1332, 170, 1.2], [1410, 212, 1.2], [1206, 382, 0.9], [1234, 470, 0.9], [962, 330, 0.9], [932, 420, 0.9]],
       edges: [[6, 5], [5, 4], [4, 3], [3, 0], [0, 1], [1, 2], [2, 3], [2, 7], [7, 8], [1, 9], [9, 10]],
-      at: [0, 760],
+      at: [-19, 760],
     },
     ursaMinor: {
       name: 'Ursa Minor',
       pts: [[1250, 150, 1.7], [1196, 214, 0.9], [1150, 270, 0.9], [1118, 330, 0.9], [1166, 398, 1.3], [1100, 436, 1.1], [1070, 370, 0.85]],
       edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]],
-      at: [4340, 1857], // far side of the sky from Ursa Major, so Settings feels like its own place
+      at: [4970, 1857], // far side of the sky from Ursa Major, so Settings feels like its own place
     },
     orion: {
       name: 'Orion',
       pts: [[1150, 166, 1], [1084, 236, 1.9], [1232, 256, 1.3], [1130, 420, 1.2], [1162, 410, 1.2], [1194, 400, 1.2], [1102, 606, 1.2], [1250, 596, 1.9]],
       edges: [[0, 1], [0, 2], [1, 3], [3, 4], [4, 5], [2, 5], [3, 6], [5, 7]],
-      at: [2800, 1500],
+      at: [3200, 1500],
     },
   };
 
   // Each view looks at one constellation. The constellation sits up and to the right, like the mockups.
   const VIEWS = { courses: 'ursaMajor', guides: 'orion', settings: 'ursaMinor' };
 
-  // Each course's constellation, from the shared list, drawn 2.6x larger in the sky.
+  // Each course's constellation, from the shared list, drawn 3x larger in the sky.
   const SHARED = (window.AndromedaConstellations && window.AndromedaConstellations.COURSE) || {};
-  // They're spread evenly along the Milky Way, all just below it, so on a course page the band crosses
-  // the top while the constellation sits in clear dark sky lower down. Every star stays at least CLEAR
-  // px from the band's centre line. Each takes the nearest free spot to its share of the band where
-  // its outline, plus a margin, touches no other constellation; a second row further down takes the rest.
+  // They sit in one row just below the Milky Way, so on a course page the band crosses the top while
+  // the constellation sits in clear dark sky lower down. Every star stays at least CLEAR px from the
+  // band's centre line, outlines stay at least 2 x M px apart, and the three tab constellations are
+  // left alone. As many as fit (the first 17 courses) go in that row, packed in a mixed order so the
+  // first few courses end up spread round the sky rather than side by side, with the spare room shared
+  // out evenly. Any after that fill a second row further down.
   {
-    const keys = Object.keys(SHARED), line = bandSamples(20), N = line.length;
-    const M = 60; // room around each one, so outlines stay at least 120px apart
+    const keys = Object.keys(SHARED);
+    const M = 75; // outlines stay at least 150px apart
     const CLEAR = 360; // the glow fades out about 300px from the band's centre
     const span = (pts) => {
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
       return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
     };
-    const placed = Object.values(CONSTELLATIONS).map((c) => {
+    const tabs = Object.values(CONSTELLATIONS).map((c) => {
       const s = span(c.pts);
       return [s.x0 + c.at[0] - M, s.y0 + c.at[1] - M, s.x1 + c.at[0] + M, s.y1 + c.at[1] + M];
     });
-    const hits = (b) => placed.some((p) => [-PERIOD, 0, PERIOD].some((sh) => b[0] + sh < p[2] && b[2] + sh > p[0] && b[1] < p[3] && b[3] > p[1]));
-    // How far a point is from the band's centre line, wherever it is round the sky.
-    const bandDist = (x, y) => {
-      let best = Infinity;
-      for (const [bx, by] of line) {
-        let dx = Math.abs(x - bx) % PERIOD; dx = Math.min(dx, PERIOD - dx);
-        if (dx < best) best = Math.min(best, Math.hypot(dx, y - by));
-      }
-      return best;
-    };
-    const OFFSETS = [];
-    for (let o = 300; o <= 1300; o += 50) OFFSETS.push(o);
-    keys.forEach((key, k) => {
+    const hits = (b, list) => list.some((p) => [-PERIOD, 0, PERIOD].some((sh) => b[0] + sh < p[2] && b[2] + sh > p[0] && b[1] < p[3] && b[3] > p[1]));
+    const itemsAt = (scale) => keys.map((key, k) => {
       const c = SHARED[key];
-      const pts = c.p.map(([x, y, m]) => [x * 2.6, y * 2.6, (m || 1) * 1.05]);
-      const s = span(pts), w = s.x1 - s.x0, h = s.y1 - s.y0, mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
-      const ideal = ((k + 0.5) / keys.length) * N, pref = k % 2 ? 1 : -1;
-      let best = null;
-      // Search outward from its share of the band; stop once nothing further along can do better.
-      for (let step = 0; step <= N / 2; step++) {
-        if (best && step > best.score) break;
-        for (const i of step ? [Math.round(ideal) + step, Math.round(ideal) - step] : [Math.round(ideal)]) {
-          const [bx, by] = line[((i % N) + N) % N];
-          for (const side of [1]) { // below the band, so it crosses the top of the course page
-            for (const off of OFFSETS) {
-              const cx = bx, cy = by + side * off;
-              const b = [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M];
-              if (hits(b)) continue;
-              const near = Math.min(...pts.map(([x, y]) => bandDist(x - mx + cx, y - my + cy)));
-              if (near < CLEAR) continue;
-              const score = step + (near - CLEAR) / 4; // strongly prefer the first row, right under the band
-              if (!best || score < best.score) best = { score, cx, cy, b };
-              break; // further out on this side would only be further from the band
-            }
-          }
+      const pts = c.p.map(([x, y, m]) => [x * scale, y * scale, (m || 1) * 1.05]);
+      const s = span(pts);
+      return { key, c, pts, w: s.x1 - s.x0, h: s.y1 - s.y0, mx: (s.x0 + s.x1) / 2, my: (s.y0 + s.y1) / 2, order: (k * 0.6180339887) % 1 };
+    }).sort((p, q) => p.order - q.order);
+    // The highest a constellation centred at cx can sit with every star still CLEAR below the band.
+    const snugY = (it, cx) => Math.max(...it.pts.map(([x, y]) => {
+      const px = cx + x - it.mx;
+      return WAVE(px) + CLEAR * Math.sqrt(1 + WAVE_SLOPE(px) ** 2) - (y - it.my);
+    }));
+    // Lay them left to right round one loop, `extra` px apart beyond the margin. Null if they don't fit.
+    function lay(items, extra) {
+      const boxes = [], out = [], end = WORLD.x0 + PERIOD;
+      let cursor = WORLD.x0;
+      for (const it of items) {
+        let spot = null;
+        for (let x = cursor; x + it.w + M * 2 <= end; x += 10) {
+          const cx = x + M + it.w / 2, cy = snugY(it, cx);
+          const b = [cx - it.w / 2 - M, cy - it.h / 2 - M, cx + it.w / 2 + M, cy + it.h / 2 + M];
+          if (!hits(b, tabs) && !hits(b, boxes)) { spot = { cx, cy, b }; break; }
         }
+        if (!spot) return null;
+        boxes.push(spot.b); out.push([it, spot]);
+        cursor = spot.b[2] - M + extra;
       }
-      if (!best) { // no free spot left: sit beside its share of the band anyway
-        const [cx, by] = line[Math.floor(ideal) % N], cy = by + pref * (CLEAR + h / 2);
-        best = { cx, cy, b: [cx - w / 2 - M, cy - h / 2 - M, cx + w / 2 + M, cy + h / 2 + M] };
+      return out;
+    }
+    const all = itemsAt(3);
+    let k = keys.length, best = null;
+    for (; k > 0 && !best; k--) best = lay(all.filter((it) => keys.indexOf(it.key) < k), 0);
+    const row = best ? best.map(([it]) => it) : [];
+    let lo = 0, hi = 1200;
+    for (let i = 0; i < 12 && row.length; i++) { const mid = (lo + hi) / 2, r = lay(row, mid); if (r) { lo = mid; best = r; } else hi = mid; }
+    best = best || [];
+    // The rest: the nearest free spot a row (or two) further down, spread round the loop.
+    const boxes = best.map(([, spot]) => spot.b), rest = all.filter((it) => !row.includes(it));
+    rest.forEach((it, i) => {
+      const start = WORLD.x0 + ((i + 0.5) / rest.length) * PERIOD;
+      let spot = null;
+      for (const drop of [380, 760, 1140]) {
+        for (let d = 0; d < PERIOD && !spot; d += 20) {
+          const cx = start + d, cy = snugY(it, cx) + drop;
+          const b = [cx - it.w / 2 - M, cy - it.h / 2 - M, cx + it.w / 2 + M, cy + it.h / 2 + M];
+          if (!hits(b, tabs) && !hits(b, boxes)) spot = { cx, cy, b };
+        }
+        if (spot) break;
       }
-      placed.push(best.b);
-      CONSTELLATIONS['con:' + key] = { name: c.name, pts, edges: c.e, at: [best.cx - mx, best.cy - my], course: true };
+      if (!spot) { const cx = start, cy = snugY(it, cx) + 380; spot = { cx, cy, b: [cx, cy, cx, cy] }; }
+      boxes.push(spot.b); best.push([it, spot]);
     });
+    for (const [it, spot] of best) {
+      CONSTELLATIONS['con:' + it.key] = { name: it.c.name, pts: it.pts, edges: it.c.e, at: [spot.cx - it.mx, spot.cy - it.my], course: true };
+    }
   }
+
   // The band's height at any point round the sky.
   const BAND_LINE = bandSamples(10);
   BAND_LINE.push([BAND_LINE[0][0] + PERIOD, BAND_LINE[0][1]]);
@@ -177,27 +195,28 @@
   function buildStars() {
     const r = rng(20261122);
     const W = PERIOD, H = CORE_Y[1] - CORE_Y[0];
+    const k0 = PERIOD / 8200; // same star density as the original, narrower sky
     const faint = [], bright = [];
     // Even field of faint stars.
-    for (let i = 0; i < 4800; i++) {
+    for (let i = 0; i < Math.round(4800 * k0); i++) {
       faint.push({ x: WORLD.x0 + r() * W, y: CORE_Y[0] + r() * H, r: 0.35 + r() * 0.6, a: 0.3 + r() * 0.5, c: r() < 0.15 ? 1 : r() < 0.25 ? 2 : 0 });
     }
     // Thick star clouds along the Milky Way.
     const line = bandSamples(12);
-    for (let i = 0; i < 4200; i++) {
+    for (let i = 0; i < Math.round(4200 * k0); i++) {
       const [bx, by] = line[Math.floor(r() * line.length)];
       const spread = 150 * (0.6 + r() * 0.8);
       faint.push({ x: wrapX(bx + gauss(r) * spread * 0.6), y: by + gauss(r) * spread, r: 0.3 + r() * 0.5, a: 0.25 + r() * 0.5, c: r() < 0.2 ? 1 : 0 });
     }
     // Scattered bright stars that twinkle.
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < Math.round(300 * k0); i++) {
       bright.push({ x: WORLD.x0 + r() * W, y: CORE_Y[0] + r() * H, r: 0.9 + r() * 0.9, a: 0.7 + r() * 0.3, seed: 1000 + i, c: r() < 0.2 ? 1 : r() < 0.3 ? 2 : 0 });
     }
     // The same field carried on above and below, at the same density, for tall windows.
     // (A second seed, so the stars above stay exactly where they were.)
     const r2 = rng(20261123);
     for (const [y0, y1] of [[WORLD.y0, CORE_Y[0]], [CORE_Y[1], WORLD.y1]]) {
-      const h = y1 - y0, k = h / H;
+      const h = y1 - y0, k = (h / H) * k0;
       for (let i = 0; i < Math.round(4800 * k); i++) {
         faint.push({ x: WORLD.x0 + r2() * W, y: y0 + r2() * h, r: 0.35 + r2() * 0.6, a: 0.3 + r2() * 0.5, c: r2() < 0.15 ? 1 : r2() < 0.25 ? 2 : 0 });
       }
