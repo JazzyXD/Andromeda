@@ -229,7 +229,7 @@
       closeDropdowns(root);
       menu.hidden = false;
       menu.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: reduced() ? 1 : 280, easing: SPRING });
-      (menu.querySelector('[aria-selected="true"]') || items()[0]).focus();
+      (menu.querySelector('[aria-selected="true"]') || items()[0]).focus({ preventScroll: true });
     };
     btn.addEventListener('click', (e) => { e.stopPropagation(); open(menu.hidden); });
     menu.addEventListener('click', (e) => {
