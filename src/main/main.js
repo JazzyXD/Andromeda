@@ -351,6 +351,17 @@ const handlers = {
     backup();
     return { changes, stepId };
   },
+  // Open a course file's original in the laptop's usual app for it (PowerPoint, Word, Preview...).
+  'files:open': async (_e, { courseId, name }) => {
+    const c = await store.findCourse(courseId);
+    const f = (c.files || []).find((x) => x.name === name);
+    if (!f) throw new Error('That file isn\'t in this course any more.');
+    const full = store.p('courses', c.id, 'files', path.basename(f.name));
+    if (!fs.existsSync(full)) throw new Error('That file is missing from your data folder.');
+    const err = await shell.openPath(full);
+    if (err) throw new Error('Couldn\'t open it: ' + err);
+    return true;
+  },
   'files:clearInbox': async () => { for (const n of await store.inbox()) fs.rmSync(store.p('.andromeda', 'inbox', n), { force: true }); store.emit('changed'); },
   'github:start': () => github.start(),
   'github:wait': async () => { await github.wait(); return linkAndSync(); },

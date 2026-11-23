@@ -227,34 +227,51 @@
 
   // ---------- a course file's "⋯" menu: Find dates, Remove file ----------
   const DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></svg>';
+  const ICON = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const FILE_ICONS = {
+    open: ICON('<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>'),
+    dates: ICON('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
+    remove: ICON('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
+  };
+  let fileMenuBtn = null;
   function closeFileMenu() {
     const m = $('.fl-menu');
-    if (!m) return;
-    const b = m.parentElement.querySelector('.fl-more');
-    if (b) b.setAttribute('aria-expanded', 'false');
-    m.closest('.panel').classList.remove('menu-open');
-    m.remove();
+    if (fileMenuBtn) fileMenuBtn.setAttribute('aria-expanded', 'false');
+    fileMenuBtn = null;
+    if (m) m.remove();
   }
+  // A bubble beside the "⋯": to its right, or to its left when there isn't room.
   function fileMenu(c, btn) {
     const row = btn.closest('.fl'), open = btn.getAttribute('aria-expanded') === 'true';
     closeDropdowns(); closeFileMenu();
     if (open) return;
     const name = btn.dataset.file, image = /^(png|jpe?g|webp|gif)$/.test(btn.dataset.kind);
+    const item = (a, label, title) => `<button type="button" role="menuitem" data-a="${a}"${a === 'remove' ? ' class="danger"' : ''}${title ? ` title="${title}"` : ''}>${FILE_ICONS[a]}<span>${label}</span></button>`;
     const m = document.createElement('div');
     m.className = 'dd-menu fl-menu';
     m.setAttribute('role', 'menu');
-    m.innerHTML = `${image ? '' : '<button type="button" role="menuitem" data-a="dates" title="Reads this file for due dates. You check them before anything is added."><span>Find dates</span><small>Sonnet</small></button>'}<button type="button" role="menuitem" data-a="remove" class="danger"><span>Remove file</span></button>`;
-    row.appendChild(m);
-    row.closest('.panel').classList.add('menu-open'); // above the panels below it
+    m.innerHTML = item('open', 'Open', 'Opens the original in its usual app')
+      + (image ? '' : item('dates', 'Find dates', 'Reads this file for due dates with Sonnet. You check them before anything is added.'))
+      + '<hr>' + item('remove', 'Remove');
+    document.body.appendChild(m);
+    const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight, gap = 12;
+    const right = r.right + gap + w <= window.innerWidth - 12;
+    const top = Math.max(12, Math.min(window.innerHeight - h - 12, r.top + r.height / 2 - 26));
+    m.style.left = (right ? r.right + gap : r.left - gap - w) + 'px';
+    m.style.top = top + 'px';
+    m.style.setProperty('--tip', (r.top + r.height / 2 - top) + 'px');
+    m.classList.add(right ? 'tip-left' : 'tip-right');
+    fileMenuBtn = btn;
     btn.setAttribute('aria-expanded', 'true');
-    m.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: reduced() ? 1 : 280, easing: SPRING });
+    m.animate([{ opacity: 0, transform: `translateX(${right ? -6 : 6}px) scale(.97)` }, { opacity: 1, transform: 'none' }], { duration: reduced() ? 1 : 280, easing: SPRING });
     $('button', m).focus({ preventScroll: true });
     m.addEventListener('click', (e) => {
       e.stopPropagation();
       const a = e.target.closest('[data-a]');
       if (!a) return;
       closeFileMenu();
-      if (a.dataset.a === 'dates') findDates(c.id, name);
+      if (a.dataset.a === 'open') api.openFile(c.id, name).catch((err) => toast(err.message));
+      else if (a.dataset.a === 'dates') findDates(c.id, name);
       else confirmRemove(c, row, name);
     });
     m.addEventListener('keydown', (e) => {
@@ -263,6 +280,9 @@
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
     });
   }
+  // The bubble sits over the page, so it closes when the page scrolls or the window changes size.
+  document.addEventListener('scroll', (e) => { if (fileMenuBtn && !(e.target.closest && e.target.closest('.fl-menu'))) closeFileMenu(); }, true);
+  window.addEventListener('resize', () => closeFileMenu());
   // Removing a file asks first, right in its row. No Claude involved, and it can be undone.
   function confirmRemove(c, row, name) {
     const was = row.innerHTML;

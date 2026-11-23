@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('andromeda', {
   attachTo: (courseId, paths) => call('files:attachTo', { courseId, paths }),
   clearInbox: () => call('files:clearInbox'),
   pathFor: (file) => webUtils.getPathForFile(file),
+  openFile: (courseId, name) => call('files:open', { courseId, name }),
 
   githubStart: () => call('github:start'),
   githubWait: () => call('github:wait'),

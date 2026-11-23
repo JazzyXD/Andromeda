@@ -306,10 +306,20 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .fl-more { flex: none; display: grid; place-items: center; width: 30px; height: 30px; margin-right: -6px; padding: 0; border: 0; border-radius: 9px; background: none; color: var(--faint); opacity: .7; cursor: pointer; transition: background .2s, opacity .2s; }
 .fl:hover .fl-more, .fl-more:focus-visible, .fl-more[aria-expanded="true"] { opacity: 1; }
 .fl-more:hover, .fl-more[aria-expanded="true"] { background: rgba(233, 236, 245, .08); color: var(--starlight); }
-.dd-menu.fl-menu { left: auto; right: -6px; top: calc(100% - 6px); min-width: 190px; }
-.dd-menu button.danger { color: #E8A07A; }
-.dd-menu button.danger:hover, .dd-menu button.danger:focus-visible { background: rgba(232, 160, 122, 0.12); color: #F0B08E; }
-.panel.menu-open { position: relative; z-index: 20; }
+.dd-menu.fl-menu { position: fixed; left: 0; right: auto; top: 0; z-index: 40; min-width: 176px; overflow: visible; max-height: none; }
+.fl-menu::before {
+  content: ''; position: absolute; top: calc(var(--tip, 26px) - 6px); width: 12px; height: 12px; background: #221A47;
+  border: 1px solid rgba(190, 170, 235, 0.22); transform: rotate(45deg);
+}
+.fl-menu.tip-left::before { left: -7px; border-top-color: transparent; border-right-color: transparent; }
+.fl-menu.tip-right::before { right: -7px; border-bottom-color: transparent; border-left-color: transparent; }
+.dd-menu.fl-menu button { justify-content: flex-start; gap: 10px; min-height: 38px; }
+.fl-menu button svg { flex: none; color: var(--faint); }
+.fl-menu button:hover svg, .fl-menu button:focus-visible svg { color: var(--starlight); }
+.fl-menu hr { width: calc(100% - 16px); margin: 3px auto; border: 0; border-top: 1px solid rgba(233, 236, 245, 0.10); }
+.dd-menu.fl-menu button.danger, .fl-menu button.danger svg { color: #EE7F87; }
+.dd-menu.fl-menu button.danger:hover, .dd-menu.fl-menu button.danger:focus-visible { background: rgba(238, 127, 135, 0.13); color: #F59AA0; }
+.fl-menu button.danger:hover svg, .fl-menu button.danger:focus-visible svg { color: #F59AA0; }
 .fl.asking { gap: 8px; }
 .fl-ask { flex: 1; min-width: 0; font-size: 13.5px; color: var(--soft); }
 .fl-ask b { color: var(--starlight); font-weight: 600; overflow-wrap: anywhere; }
