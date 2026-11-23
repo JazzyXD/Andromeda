@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('andromeda', {
   claudeStatus: () => call('claude:status'),
   run: (req) => call('claude:run', req),
   stop: () => call('claude:stop'),
+  findDates: (req) => call('dates:find', req),
+  addDates: (courseId, items) => call('dates:add', { courseId, items }),
   onClaude: on('claude:event'),
   answer: (pending, yes) => call('confirm:answer', { pending, yes }),
   undo: (stepId) => call('undo', stepId),

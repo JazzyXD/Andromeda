@@ -19,6 +19,11 @@
     return `${MONTHS[m - 1]} ${day}${y !== new Date().getFullYear() ? ', ' + y : ''}`;
   };
   const SPRING = 'cubic-bezier(.16,1.12,.3,1)';
+  const prettyTime = (t) => {
+    if (!t) return '';
+    const [h, m] = t.split(':').map(Number);
+    return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+  };
 
   document.documentElement.dataset.platform = api.platform;
 
@@ -91,12 +96,12 @@
     const up = (c.upcoming || []).map((u) => `<div class="cu-row${u.done ? ' done' : ''}">
         <span class="cu-dot"></span>
         <div class="cu-main"><b>${esc(u.title)}</b><span>${esc(u.covers || (u.done ? 'Done' : 'Scope not set yet'))}</span></div>
-        <span class="cu-when">${esc([prettyDate(u.date) || 'Date not set', u.time].filter(Boolean).join(' · '))}</span>
+        <span class="cu-when">${esc([prettyDate(u.date) || 'Date not set', prettyTime(u.time)].filter(Boolean).join(' · '))}</span>
       </div>`).join('') || '<p class="muted">Nothing coming up. Try “The final is Dec 15”.</p>';
     const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div></div>`).join('')
       || '<p class="muted">No weeks yet. Try “Chapter 12 is taxable income for corporations”.</p>';
     const files = (c.files || []).map((fl) => `<div class="fl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-        <span class="fl-name">${esc(fl.name)}${fl.note ? `<small>${esc(fl.note)}</small>` : ''}</span><span class="fl-kind">${esc((fl.kind || '').toUpperCase())}</span></div>`).join('')
+        <span class="fl-name">${esc(fl.name)}${fl.note ? `<small>${esc(fl.note)}</small>` : ''}</span>${/^(png|jpe?g|webp|gif)$/.test(fl.kind || '') ? '' : `<button type="button" class="pill-btn fd" data-file="${esc(fl.name)}" title="Reads this file for due dates with Sonnet. You check them before anything is added.">Find dates</button>`}<span class="fl-kind">${esc((fl.kind || '').toUpperCase())}</span></div>`).join('')
       || '<p class="muted">Drop slides or PDFs anywhere on this page to add them.</p>';
     $('#view-course').innerHTML = `<div class="inner">
       <button type="button" class="back m" id="back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>All courses</button>
@@ -115,6 +120,7 @@
         <section class="panel m"><h2>Course files</h2>${files}</section>
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);
+    $$('.fd', $('#view-course')).forEach((b) => b.addEventListener('click', () => findDates(c.id, b.dataset.file)));
   }
 
   function openCourse(id, card) {
@@ -195,7 +201,7 @@
     const motionBtn = (v, label) => `<button type="button" data-motion="${v}" aria-pressed="${motionPref === v}">${label}</button>`;
     const cl = S.claude || {}, gh = S.github || {};
     $('#view-settings').innerHTML = `<div class="inner" style="max-width:820px">
-      <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.1</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
+      <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.2</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
       <div class="panel m">
         <h2>Motion</h2>
         <p>How much the sky and screens move. Reduced swaps every pan and slide for a quiet crossfade.</p>
@@ -446,6 +452,58 @@
     catch (err) { finishTurn({ ok: false, error: { message: err.message } }); }
   });
 
+  // Find dates runs on Sonnet, and only from a click. Nothing saves until you tick and add.
+  async function findDates(courseId, file) {
+    if (running) { toast('Claude is still working on the last prompt.'); return; }
+    const c = courseById(courseId);
+    openConvo();
+    $('#convo-chip').textContent = c ? c.name : 'All courses';
+    startTurn(`Find dates in ${file}`);
+    turn.job = { courseId, file };
+    setRunning(true);
+    try { await api.findDates({ courseId, file }); }
+    catch (err) { finishTurn({ ok: false, error: { message: err.message } }); }
+  }
+
+  function datesCard(job, items) {
+    const c = courseById(job.courseId);
+    const box = document.createElement('div');
+    box.className = 'dates';
+    if (!items.length) { box.innerHTML = `<p class="muted">No dates found in ${esc(job.file)}.</p>`; return box; }
+    const has = (it) => !!(c && (c.upcoming || []).some((u) => u.title.toLowerCase() === it.title.toLowerCase() && (u.date || '') === (it.date || '')));
+    box.innerHTML = `<div class="dt-head"><span>Found ${items.length} date${items.length === 1 ? '' : 's'} in ${esc(job.file)}</span></div>
+      <p class="dt-sub">Untick anything that's wrong, then add the rest to Coming up.</p>
+      ${items.map((it, i) => `<label class="dt-row${has(it) ? ' dup' : ''}">
+        <input type="checkbox" data-i="${i}" ${has(it) ? '' : 'checked'}>
+        <span class="dt-box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+        <span class="dt-main"><span class="dt-line"><b>${esc(it.title)}</b><span class="dt-when">${esc([prettyDate(it.date) || 'No date in the document', prettyTime(it.time)].filter(Boolean).join(' · '))}</span></span>
+          ${it.covers ? `<span class="dt-covers">${esc(it.covers)}</span>` : ''}
+          <span class="dt-quote">“${esc(it.quote)}”${it.page ? ` · page ${esc(it.page)}` : ''}${has(it) ? ' · already in Coming up' : ''}</span></span>
+      </label>`).join('')}
+      <div class="dt-foot"><button type="button" class="btn dt-add"></button><button type="button" class="btn ghost dt-skip">Skip</button></div>`;
+    const boxes = $$('input[type=checkbox]', box), add = $('.dt-add', box);
+    const count = () => { const n = boxes.filter((b) => b.checked).length; add.textContent = n ? `Add ${n} to Coming up` : 'Nothing ticked'; add.disabled = !n; };
+    boxes.forEach((b) => b.addEventListener('change', count));
+    count();
+    add.addEventListener('click', async () => {
+      add.disabled = true;
+      try {
+        const r = await api.addDates(job.courseId, boxes.filter((b) => b.checked).map((b) => items[+b.dataset.i]));
+        box.replaceWith(r.changes.length ? changesCard(r.changes, r.stepId) : Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Those are all in Coming up already.' }));
+      } catch (e) { add.disabled = false; toast(e.message); }
+    });
+    $('.dt-skip', box).addEventListener('click', () => { box.innerHTML = '<p class="muted">Skipped. Nothing was added.</p>'; });
+    return box;
+  }
+
+  function offerCard(ev) {
+    const box = document.createElement('div');
+    box.className = 'offer';
+    box.innerHTML = `<div><b>Find dates in ${esc(ev.file)}</b><span>Runs once on Sonnet. You check every date before anything is added.</span></div><button type="button" class="btn">Find dates</button>`;
+    $('.btn', box).addEventListener('click', () => { box.remove(); findDates(ev.courseId, ev.file); });
+    return box;
+  }
+
   function startTurn(text) {
     const el = document.createElement('div');
     el.className = 'turn';
@@ -534,9 +592,11 @@
       const note = document.createElement('div');
       note.className = 'tok';
       note.title = `New input ${t.input + t.cacheWrite}, reply ${t.output}, reused ${reused}`;
-      note.textContent = `${k(fresh)} tokens${reused ? ` · ${k(reused)} reused` : ''}`;
+      const who = ev.model ? ev.model[0].toUpperCase() + ev.model.slice(1) + ' · ' : '';
+      note.textContent = `${who}${k(fresh)} tokens${reused ? ` · ${k(reused)} reused` : ''}`;
       turn.el.querySelector('.ai').appendChild(note);
     }
+    if (turn.job && ev.ok && !ev.proposed) $('.extras', turn.el).appendChild(datesCard(turn.job, []));
     if (ev.sessionId) session = ev.sessionId;
     turn = null;
     scrollLog();
@@ -568,6 +628,8 @@
       }
       case 'changes': for (const c of ev.changes) { const card = $(`.card[data-course="${CSS.escape(c.courseId || '')}"]`); if (card && !reduced()) card.animate([{ boxShadow: '0 0 0 1px rgba(159,201,196,.6), 0 0 34px rgba(47,127,134,.5)' }, { boxShadow: '0 10px 30px rgba(2,3,10,.30)' }], { duration: 1600, easing: 'ease-out' }); } break;
       case 'confirm': $('.extras', el).appendChild(confirmCard(ev.pending)); break;
+      case 'dates': if (turn.job) $('.extras', el).appendChild(datesCard(turn.job, ev.items)); break;
+      case 'offer': $('.extras', el).appendChild(offerCard(ev)); break;
       case 'usage': S.usage = ev.usage; renderUsage(); break;
       case 'warn': toast(ev.message); break;
       case 'done': finishTurn(ev); break;

@@ -8,13 +8,17 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { Invalid } = require('./data');
 
-const TOOL_NAMES = ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'delete_course', 'remove_files'];
+const TOOL_NAMES = {
+  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'delete_course', 'remove_files'],
+  dates: ['propose_dates'],
+};
 
 function createToolServer(store, extract) {
   const runs = new Map(); // key -> { changes: [], pending: [], onEvent }
 
   function build(run) {
     const server = new McpServer({ name: 'andromeda', version: '1.0.0' });
+    if (run.mode === 'dates') return buildDates(server, run);
     const course = z.string().describe('Course name or id');
     const wrap = (fn) => async (args) => {
       try {
@@ -46,12 +50,12 @@ function createToolServer(store, extract) {
 
     server.registerTool('add_courses', {
       description: 'Add one or more courses.',
-      inputSchema: { courses: z.array(z.object({ name: z.string(), instructor: z.string().optional(), schedule: z.string().optional(), school: z.string().optional(), notes: z.string().optional() })) },
+      inputSchema: { courses: z.array(z.object({ name: z.string(), instructor: z.string().optional(), schedule: z.string().optional(), school: z.string().optional(), term: z.string().optional().describe('e.g. Fall 2026'), notes: z.string().optional() })) },
     }, wrap(({ courses }) => store.addCourses(courses)));
 
     server.registerTool('update_course', {
-      description: "Change a course's name, instructor, schedule, school or notes.",
-      inputSchema: { course, name: z.string().optional(), instructor: z.string().optional(), schedule: z.string().optional(), school: z.string().optional(), notes: z.string().optional() },
+      description: "Change a course's name, instructor, schedule, school, term (e.g. Fall 2026) or notes.",
+      inputSchema: { course, name: z.string().optional(), instructor: z.string().optional(), schedule: z.string().optional(), school: z.string().optional(), term: z.string().optional(), notes: z.string().optional() },
     }, wrap(({ course: ref, ...f }) => store.updateCourse(ref, f)));
 
     const which = z.string().describe('The existing item: its id from the summary, or its current name');
@@ -86,6 +90,21 @@ function createToolServer(store, extract) {
       inputSchema: { course, files: z.array(z.string()) },
     }, wrap(({ course: ref, files }) => store.attachFiles(ref, files, extract)));
 
+    server.registerTool('offer_find_dates', {
+      description: 'When the user wants due dates, tests or deadlines pulled out of a course file (an outline, schedule or critical path), offer the Find dates button instead of reading the file yourself. Shows the button; the user starts it.',
+      inputSchema: { course, file: z.string().describe('The course file name') },
+    }, async ({ course: ref, file }) => {
+      try {
+        const c = await store.findCourse(ref);
+        const f = c.files.find((x) => x.name === file) || c.files.find((x) => x.name.toLowerCase().includes(String(file).toLowerCase()));
+        if (!f) throw new Invalid(`${c.name} has no file "${file}". Files: ${c.files.map((x) => x.name).join(', ') || 'none'}.`);
+        run.onEvent({ type: 'offer', courseId: c.id, course: c.name, file: f.name });
+        return { content: [{ type: 'text', text: 'The Find dates button is showing. Tell the user in one line to click it.' }] };
+      } catch (e) {
+        return { content: [{ type: 'text', text: 'Not done: ' + (e instanceof Invalid ? e.message : 'could not find that.') }], isError: true };
+      }
+    });
+
     server.registerTool('delete_course', {
       description: 'Ask to delete a whole course. The user must confirm on screen; nothing is deleted by this call.',
       inputSchema: { course },
@@ -96,6 +115,27 @@ function createToolServer(store, extract) {
       inputSchema: { course, files: z.array(z.string()) },
     }, ask('remove_files'));
 
+    return server;
+  }
+
+  // Find dates: one tool that hands back what it found. Nothing is saved until the user ticks and adds.
+  function buildDates(server, run) {
+    server.registerTool('propose_dates', {
+      description: 'Hand back every dated item found in the document, once, all together.',
+      inputSchema: { items: z.array(z.object({
+        title: z.string(), date: z.string().optional().describe('YYYY-MM-DD, only if the document gives or clearly implies it'),
+        time: z.string().optional().describe('HH:MM 24h'), covers: z.string().optional(),
+        quote: z.string().describe('The exact words it came from'), page: z.number().optional(),
+      })) },
+    }, async ({ items }) => {
+      const ok = /^\d{4}-\d{2}-\d{2}$/;
+      run.proposed = items.slice(0, 80).map((it) => ({
+        title: String(it.title || '').slice(0, 80), date: ok.test(it.date || '') ? it.date : '', time: /^\d{1,2}:\d{2}$/.test(it.time || '') ? it.time : '',
+        covers: String(it.covers || '').slice(0, 160), quote: String(it.quote || '').slice(0, 240), page: it.page || null,
+      }));
+      run.onEvent({ type: 'dates', items: run.proposed });
+      return { content: [{ type: 'text', text: 'Shown to the user to check.' }] };
+    });
     return server;
   }
 
@@ -123,11 +163,11 @@ function createToolServer(store, extract) {
 
   return {
     ready,
-    names: TOOL_NAMES.map((t) => `mcp__andromeda__${t}`),
+    names: (mode = 'course') => TOOL_NAMES[mode].map((t) => `mcp__andromeda__${t}`),
     // One private key per prompt; the connection refuses anything else.
-    open(onEvent) {
+    open(onEvent, mode = 'course') {
       const key = crypto.randomBytes(24).toString('hex');
-      const run = { changes: [], pending: [], onEvent };
+      const run = { mode, changes: [], pending: [], proposed: null, onEvent };
       runs.set(key, run);
       return {
         key, run,

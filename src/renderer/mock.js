@@ -51,7 +51,7 @@
     out({ type: 'usage', usage: { ...usage, fiveHour: { ...usage.fiveHour, pct: 0.25 } } });
     const reply = 'Done. The final is on Income Tax 2 now, covering chapter 15 onward.';
     for (const w of reply.split(/(?<= )/)) { out({ type: 'text', delta: w }); await sleep(30); }
-    out({ type: 'done', ok: true, text: reply, changes, pending: [], stepId: 'abc1234', sessionId: 's', tokens: { input: 12, output: 96, cacheRead: 1840, cacheWrite: 310 } });
+    out({ type: 'done', ok: true, text: reply, changes, pending: [], stepId: 'abc1234', sessionId: 's', model: 'haiku', tokens: { input: 12, output: 96, cacheRead: 1840, cacheWrite: 310 } });
   }
 
   window.andromeda = {
@@ -62,6 +62,25 @@
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
+    findDates: async ({ courseId, file }) => {
+      const out = (e) => emit('claude', e);
+      (async () => {
+        out({ type: 'start' }); await sleep(300);
+        out({ type: 'step', step: { id: 'r', label: 'Read ' + file.replace(/\.[^.]+$/, '.md'), state: 'running' } }); await sleep(600);
+        out({ type: 'step', step: { id: 'r', label: 'Read ' + file.replace(/\.[^.]+$/, '.md'), state: 'done' } });
+        const items = [
+          { title: 'Assignment 1', date: `${year}-10-17`, time: '', covers: '', quote: 'Assignment 1 due Oct 17', page: 1 },
+          { title: 'Midterm', date: `${year}-10-22`, time: '', covers: 'Chapters 12 to 14', quote: 'Midterm exam (Ch 12-14)', page: 1 },
+          { title: 'Final exam', date: `${year}-12-15`, time: '14:00', covers: '', quote: 'Final exam Dec 15, 2:00 pm', page: 1 },
+          { title: 'Case study', date: '', time: '', covers: '', quote: 'Case study due in week 9', page: 2 },
+        ];
+        out({ type: 'dates', items });
+        for (const w of 'I found 4 items. Check them before adding.'.split(/(?<= )/)) { out({ type: 'text', delta: w }); await sleep(30); }
+        out({ type: 'done', ok: true, text: '', changes: [], pending: [], model: 'sonnet', mode: 'dates', proposed: items, tokens: { input: 40, output: 420, cacheRead: 900, cacheWrite: 2600 } });
+      })();
+      return true;
+    },
+    addDates: async (courseId, items) => ({ changes: items.map((i) => ({ course: 'Income Tax 2', courseId, where: 'Coming up', what: [i.title, i.date].filter(Boolean).join(', ') })), stepId: 'fff0001' }),
     onClaude: (f) => listeners.claude.push(f),
     answer: async (pending, yes) => {
       if (!yes) return { changes: [] };

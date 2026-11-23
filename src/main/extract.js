@@ -76,16 +76,95 @@ async function pptx(file) {
   return { text: parts.join('\n') + '\n', note, pages: shown };
 }
 
+// PDF text rebuilt from where each word sits on the page: words at the same height form a line, and
+// wide gaps become column breaks, so schedule tables keep their rows together.
+function pageLines(items) {
+  const words = items.filter((it) => it.str && it.str.trim()).map((it) => ({
+    s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10,
+  }));
+  words.sort((a, b) => b.y - a.y || a.x - b.x);
+  const lines = [];
+  for (const wd of words) {
+    const line = lines.find((l) => Math.abs(l.y - wd.y) <= Math.max(2, wd.h * 0.45));
+    if (line) line.words.push(wd); else lines.push({ y: wd.y, words: [wd] });
+  }
+  lines.sort((a, b) => b.y - a.y);
+  return lines.map((l) => {
+    l.words.sort((a, b) => a.x - b.x);
+    let out = '', cols = 0, prev = null;
+    for (const wd of l.words) {
+      if (prev) {
+        const gap = wd.x - (prev.x + prev.w);
+        const cw = prev.w / Math.max(1, prev.s.length) || wd.h * 0.5;
+        if (gap > Math.max(cw * 3, 10)) { out += ' | '; cols++; } else if (gap > cw * 0.2 && !/\s$/.test(out) && !/^\s/.test(wd.s)) out += ' ';
+      }
+      out += wd.s;
+      prev = wd;
+    }
+    out = out.replace(/\s+/g, ' ').trim();
+    return cols >= 2 ? `| ${out} |` : out;
+  }).filter(Boolean);
+}
+
 async function pdf(file) {
-  const { extractText, getDocumentProxy } = await import('unpdf');
+  const { getDocumentProxy } = await import('unpdf');
   const doc = await getDocumentProxy(new Uint8Array(await fsp.readFile(file)));
-  const { totalPages, text } = await extractText(doc, { mergePages: false });
-  const chars = text.reduce((s, t) => s + t.trim().length, 0);
-  // Almost no text means a scanned PDF: Claude reads the original instead.
-  if (chars < totalPages * 40) return { text: '', note: 'scanned, Claude reads the original', pages: totalPages };
   const parts = [`# ${path.basename(file)}`];
-  text.forEach((t, i) => { const s = t.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim(); if (s) parts.push(`\n## Page ${i + 1}\n${s}`); });
-  return { text: parts.join('\n') + '\n', note: '', pages: totalPages };
+  let chars = 0;
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const lines = pageLines((await page.getTextContent()).items);
+    chars += lines.join('').length;
+    if (lines.length) parts.push(`\n## Page ${i}\n${lines.join('\n')}`);
+  }
+  // Almost no text means a scanned PDF: Claude reads the original instead.
+  if (chars < doc.numPages * 40) return { text: '', note: 'scanned, Claude reads the original', pages: doc.numPages };
+  return { text: parts.join('\n') + '\n', note: '', pages: doc.numPages };
+}
+
+// Word: headings, paragraphs and lists as text, tables kept as rows.
+async function docx(file) {
+  const mammoth = require('mammoth');
+  const { value: html } = await mammoth.convertToHtml({ path: file });
+  const strip = (h) => decode(h.replace(/<br\s*\/?>/g, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+  const out = [`# ${path.basename(file)}`];
+  const blocks = html.match(/<table[\s\S]*?<\/table>|<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>|<p[^>]*>[\s\S]*?<\/p>|<li[^>]*>[\s\S]*?<\/li>/g) || [];
+  for (const b of blocks) {
+    if (b.startsWith('<table')) {
+      const rows = (b.match(/<tr[\s\S]*?<\/tr>/g) || []).map((tr) => '| ' + (tr.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(strip).join(' | ') + ' |');
+      if (rows.length) out.push('', ...rows, '');
+    } else if (/^<h(\d)/.test(b)) {
+      const t = strip(b); if (t) out.push('', '#'.repeat(Math.min(6, +b[2] + 1)) + ' ' + t);
+    } else if (b.startsWith('<li')) {
+      const t = strip(b); if (t) out.push('- ' + t);
+    } else {
+      const t = strip(b); if (t) out.push(t);
+    }
+  }
+  return { text: out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n', note: '' };
+}
+
+// Excel: each sheet as rows, with real dates written out.
+async function xlsx(file) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(file);
+  const fmt = (v) => {
+    if (v == null) return '';
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    if (typeof v === 'object') return v.text || (v.richText ? v.richText.map((r) => r.text).join('') : v.result != null ? fmt(v.result) : '');
+    return String(v);
+  };
+  const out = [`# ${path.basename(file)}`];
+  wb.eachSheet((ws) => {
+    out.push('', `## Sheet: ${ws.name}`);
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      const cells = [];
+      for (let c = 1; c <= row.cellCount; c++) cells.push(fmt(row.getCell(c).value).replace(/\s+/g, ' ').trim());
+      if (cells.some(Boolean)) out.push('| ' + cells.join(' | ') + ' |');
+    });
+  });
+  return { text: out.join('\n') + '\n', note: '' };
 }
 
 async function plain(file) {
@@ -97,7 +176,11 @@ async function extract(file) {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.pptx') return pptx(file);
   if (ext === '.pdf') return pdf(file);
+  if (ext === '.docx') return docx(file);
+  if (ext === '.xlsx') return xlsx(file);
   if (ext === '.txt' || ext === '.md') return plain(file);
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) return { text: '', note: 'picture, Claude looks at it only when needed' };
+  if (ext === '.doc' || ext === '.xls') return { text: '', note: `old ${ext} format, save it as ${ext}x to include its text` };
   if (ext === '.ppt') return { text: '', note: 'old .ppt format, save it as .pptx to include its text' };
   return { text: '', note: '' };
 }

@@ -7,9 +7,10 @@ A night-sky learning app for your courses and study guides, run on your own Clau
 - **First open:** checks Claude Code is installed, and connects GitHub with a short code so your courses are backed up to your private `Andromeda-data` repo.
 - **Courses by prompting:** "Add Income Tax 2, Tue and Thu with Dan Carli", "The final is Dec 15", "Chapter 12 is taxable income for corporations". Claude can only use Andromeda's course tools and read your course files: no commands, no internet, nothing outside your Andromeda folder.
 - **Every change can be undone**, and deleting a course or removing files always asks you first.
-- **Slides:** drop PDFs or PowerPoints onto a course (or anywhere, then say which course). Their text is pulled out once on your laptop, with hidden slides skipped, so Claude reads a cheap text version.
+- **Files:** drop PDFs, PowerPoints, Word or Excel files onto a course (or anywhere, then say which course). Their text is pulled out once on your laptop, with hidden slides skipped and tables kept as rows, so Claude reads a cheap text version. Photos and scanned PDFs are read by Claude only when needed.
+- **Find dates:** each course file has a Find dates button. It reads that file on Sonnet and shows a checklist of every date with the line it came from; nothing is added until you tick and confirm.
 - **Course pages:** click a card and it grows into the course while the sky pans to that course's constellation.
-- **Usage** under the prompt box, plus the model and effort picker (default Sonnet, medium).
+- **Usage** under the prompt box, plus the model and effort picker (course prompts default to Haiku, medium).
 
 Your data lives in an `Andromeda Data` folder in your home folder, separate from the app's code.
 

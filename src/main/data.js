@@ -144,7 +144,7 @@ class DataStore extends EventEmitter {
       used.push(con);
       const c = {
         id, name, constellation: con,
-        instructor: clean(raw.instructor, 80), schedule: clean(raw.schedule, 120), school: clean(raw.school, 80),
+        instructor: clean(raw.instructor, 80), schedule: clean(raw.schedule, 120), school: clean(raw.school, 80), term: clean(raw.term, 40),
         notes: clean(raw.notes), upcoming: [], weeks: [], files: [], created: now(), updated: now(),
       };
       await this.saveCourse(c);
@@ -157,7 +157,7 @@ class DataStore extends EventEmitter {
   async updateCourse(ref, fields) {
     const c = await this.findCourse(ref);
     const changes = [];
-    for (const k of ['name', 'instructor', 'schedule', 'school', 'notes']) {
+    for (const k of ['name', 'instructor', 'schedule', 'school', 'term', 'notes']) {
       if (fields[k] === undefined) continue;
       const v = clean(fields[k], k === 'notes' ? MAX_TEXT : 120);
       if (k === 'name' && !v) fail('A course name can\'t be blank.');
@@ -202,6 +202,14 @@ class DataStore extends EventEmitter {
     c.upcoming.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     await this.saveCourse(c);
     return changes;
+  }
+
+  // Dates the user ticked in a Find dates checklist. Exact repeats are skipped quietly.
+  async addFoundDates(ref, items) {
+    const c = await this.findCourse(ref);
+    const fresh = (items || []).filter((raw) => clean(raw.title, 80) && !c.upcoming.some((u) => u.title.toLowerCase() === clean(raw.title, 80).toLowerCase() && (u.date || '') === (raw.date || '')));
+    if (!fresh.length) return [];
+    return this.addUpcoming(c.id, fresh.map((r) => ({ title: r.title, date: r.date || '', time: r.time || '', covers: r.covers || '' })));
   }
 
   // Edit one item that already exists: rename, move, set what it covers, mark done.
@@ -338,7 +346,7 @@ class DataStore extends EventEmitter {
     if (!all.length) return 'No courses yet.';
     return all.map((c) => {
       const lines = [`## ${c.name} (id: ${c.id})`];
-      const meta = [c.instructor && `Instructor: ${c.instructor}`, c.schedule && `Schedule: ${c.schedule}`, c.school && `School: ${c.school}`].filter(Boolean);
+      const meta = [c.term && `Term: ${c.term}`, c.instructor && `Instructor: ${c.instructor}`, c.schedule && `Schedule: ${c.schedule}`, c.school && `School: ${c.school}`].filter(Boolean);
       if (meta.length) lines.push(meta.join(' | '));
       if (c.notes) lines.push(`Notes: ${c.notes}`);
       if (c.upcoming.length) lines.push('Coming up: ' + c.upcoming.map((u) => `[id ${u.id}] ${u.title}${u.date ? ' ' + u.date : ''}${u.time ? ' ' + u.time : ''}${u.covers ? ' (' + u.covers + ')' : ''}${u.done ? ' [done]' : ''}`).join('; '));

@@ -263,6 +263,16 @@ const handlers = {
     return true;
   },
   'claude:stop': () => runner.stop(),
+  // Only ever started by the user clicking Find dates.
+  'dates:find': (_e, req) => { runner.findDates(req, (ev) => toWin('claude:event', ev)); return true; },
+  'dates:add': async (_e, { courseId, items }) => {
+    const changes = await store.addFoundDates(courseId, items);
+    const stepId = changes.length ? await store.commit(`Added ${changes.length} date${changes.length === 1 ? '' : 's'} from a document`) : null;
+    await store.writeSummary();
+    store.emit('changed');
+    if (stepId) backup();
+    return { changes, stepId };
+  },
   // The user's Yes or No for a delete. Only a Yes from the window can delete anything.
   'confirm:answer': async (_e, { pending, yes }) => {
     if (!yes) return { changes: [] };
@@ -277,7 +287,7 @@ const handlers = {
   },
   'undo': async (_e, stepId) => { const r = await store.undo(stepId); if (r.ok) backup(); return r; },
   'files:pick': async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Slides and documents', extensions: ['pdf', 'pptx', 'ppt', 'txt', 'md'] }] });
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Slides and documents', extensions: ['pdf', 'pptx', 'ppt', 'docx', 'doc', 'xlsx', 'xls', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp'] }] });
     return r.canceled ? [] : r.filePaths;
   },
   'files:receive': async (_e, paths) => { await store.receive(paths); store.emit('changed'); return store.inbox(); },

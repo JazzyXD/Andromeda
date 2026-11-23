@@ -16,6 +16,8 @@ const FRIENDLY = {
   mcp__andromeda__change_week: 'Changing a week',
   mcp__andromeda__attach_files: 'Filing slides',
   mcp__andromeda__delete_course: 'Asking before deleting',
+  mcp__andromeda__offer_find_dates: 'Offering Find dates',
+  mcp__andromeda__propose_dates: 'Listing the dates found',
   mcp__andromeda__remove_files: 'Asking before removing files',
 };
 const stepLabel = (name, input) => {
@@ -35,6 +37,7 @@ Rules:
 - If it's unclear which course they mean, ask one short question instead of guessing.
 - Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
 - Files under "Waiting to be filed" go into a course with attach_files once you know which course.
+- To pull due dates out of a course file (an outline, schedule or critical path), call offer_find_dates instead of reading the file yourself.
 - Changing something that already exists (renaming a test, moving a date, relabelling a week) uses change_upcoming or change_week on that item. The add tools are only for things that don't exist yet. If a change tool says it can't find the item or finds several, ask the user which one.`;
 
 function parseUsage(info, prev) {
@@ -82,20 +85,36 @@ class ClaudeRunner {
   }
 
   // emit(event) is called for everything the window shows.
-  async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null }, emit) {
+  // Find dates: always Sonnet at low effort, started only by the user clicking the button.
+  async findDates({ courseId, file }, emit) {
+    const c = await this.store.findCourse(courseId);
+    const f = c.files.find((x) => x.name === file);
+    if (!f) return emit({ type: 'done', ok: false, error: { code: 'error', message: 'That file isn\'t in this course anymore.' } });
+    const orig = ['courses', c.id, 'files', f.name].join('/');
+    const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+    const system = `You find dates in one course document for Andromeda, a study app.
+Course: ${c.name}. Term: ${c.term || `not set; today is ${today}, so assume the current or next school term`}.
+${f.text ? `Read the document's text at ${f.text}. If a table on a page looks scrambled, Read that page of the original at ${orig} (use pages).` : `Read the original at ${orig}.`}
+Find every test, quiz, exam, assignment, project, presentation or other deadline. For each give: a short title ("Midterm", "Assignment 1"); the date as YYYY-MM-DD when the document gives or clearly implies it, with the year from the term; the time as 24-hour HH:MM if given; what it covers if stated; the exact quote it came from and its page.
+List items with no date too, with the date left out. Never invent a date the document doesn't support.
+Call propose_dates exactly once with everything, then reply with one short line.`;
+    return this.run({ prompt: `Find the dates in ${f.name}.`, model: 'sonnet', effort: 'low', mode: 'dates', system, label: f.name }, emit);
+  }
+
+  async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null, mode = 'course', system: customSystem = null }, emit) {
     if (this.active) return emit({ type: 'done', ok: false, error: { code: 'busy', message: 'Claude is still working on the last prompt.' } });
     const file = await bin.find('claude');
     if (!file) return emit({ type: 'done', ok: false, error: { code: 'install', message: 'Claude Code isn\'t installed on this laptop.' } });
 
     const runId = crypto.randomUUID();
-    const handle = this.tools.open((e) => emit(e));
+    const handle = this.tools.open((e) => emit(e), mode);
     const runDir = this.store.p('.andromeda', 'run');
     await fsp.mkdir(runDir, { recursive: true });
     const summary = await this.store.writeSummary();
     const waiting = await this.store.inbox();
     const today = new Date().toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     // Brief and summary first: they rarely change, so Claude's servers can reuse them cheaply.
-    const system = `${BRIEF}\n\n# Courses\n${summary}\n\n# Waiting to be filed\n${waiting.length ? waiting.join('\n') : 'nothing'}\n\nToday is ${today}.`;
+    const system = customSystem || `${BRIEF}\n\n# Courses\n${summary}\n\n# Waiting to be filed\n${waiting.length ? waiting.join('\n') : 'nothing'}\n\nToday is ${today}.`;
     const sysFile = path.join(runDir, `${runId}-system.md`);
     const mcpFile = path.join(runDir, `${runId}-mcp.json`);
     await fsp.writeFile(sysFile, system);
@@ -108,10 +127,10 @@ class ClaudeRunner {
       '--system-prompt-file', sysFile,
       '--tools', 'Read',
       '--mcp-config', mcpFile, '--strict-mcp-config',
-      '--allowedTools', ['Read', ...this.tools.names].join(','),
+      '--allowedTools', ['Read', ...this.tools.names(mode)].join(','),
       '--permission-mode', 'dontAsk',
       '--disable-slash-commands',
-      '--max-turns', '40',
+      '--max-turns', mode === 'dates' ? '15' : '40',
     ];
     if (sessionId) args.push('--resume', sessionId);
 
@@ -126,7 +145,7 @@ class ClaudeRunner {
     emit({ type: 'start', runId });
 
     // Reply text is held back until its first line (the source tag) has been checked.
-    let session = sessionId, firstText = true, head = '', tagState = 'waiting', shown = '', usedTools = false, errText = '';
+    let session = sessionId, firstText = mode === 'course', head = '', tagState = mode === 'course' ? 'waiting' : 'ok', shown = '', usedTools = false, errText = '';
     const steps = new Map();
     const blocks = {};
 
@@ -181,7 +200,7 @@ class ClaudeRunner {
 
       const failed = !this.resultOk;
       emit({
-        type: 'done', ok: !failed, runId, sessionId: session, text, refused, stepId,
+        type: 'done', ok: !failed, runId, sessionId: mode === 'course' ? session : null, text, refused, stepId, model, mode, proposed: run.proposed,
         changes: run.changes, pending: run.pending, tokens: this.tokens || null,
         error: failed ? friendlyError(this.resultText || errText || `exit ${code}`) : null,
       });
