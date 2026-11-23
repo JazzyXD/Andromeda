@@ -195,12 +195,17 @@
     const motionBtn = (v, label) => `<button type="button" data-motion="${v}" aria-pressed="${motionPref === v}">${label}</button>`;
     const cl = S.claude || {}, gh = S.github || {};
     $('#view-settings').innerHTML = `<div class="inner" style="max-width:820px">
-      <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.0</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
+      <div class="head m"><div><h1>Settings</h1><p>Andromeda 0.2.1</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('settings'))}</p></div>
       <div class="panel m">
         <h2>Motion</h2>
         <p>How much the sky and screens move. Reduced swaps every pan and slide for a quiet crossfade.</p>
         <div class="row"><span class="pill">Animations</span><div class="seg" role="group" aria-label="Motion">${motionBtn('system', 'Match system')}${motionBtn('full', 'Full')}${motionBtn('reduced', 'Reduced')}</div></div>
         <div class="row"><label class="pill" for="twinkle">Star twinkle</label><div class="slide"><input type="range" id="twinkle" min="0" max="100" step="1" value="${twinkle}"><span id="twinkle-val">${twinkleWord(twinkle)}</span></div></div>
+      </div>
+      <div class="panel m">
+        <h2>Interface size</h2>
+        <p>Auto picks a size from your screen. You can also use Ctrl or Cmd with = and - to change it, and 0 to go back to Auto.</p>
+        <div class="row"><span class="pill" id="zoom-now"></span><div class="seg" role="group" aria-label="Interface size" id="zoom-seg"></div></div>
       </div>
       <div class="panel m">
         <h2>Claude</h2>
@@ -228,9 +233,30 @@
     tw.addEventListener('input', () => { twinkle = +tw.value; $('#twinkle-val').textContent = twinkleWord(twinkle); paint(); sky.redraw(); });
     tw.addEventListener('change', () => local.set('twinkle', twinkle));
     $('#open-data').addEventListener('click', () => api.openDataFolder());
+    renderZoom();
     const ghb = $('#gh-connect');
     if (ghb) ghb.addEventListener('click', () => showSetup(true));
   }
+
+  // ---------- interface size ----------
+  let zoom = { mode: 'auto', factor: 1, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] };
+  const pct = (z) => Math.round(z * 100) + '%';
+  function renderZoom() {
+    const seg = $('#zoom-seg');
+    if (!seg) return;
+    const opts = [['auto', 'Auto']].concat(zoom.levels.map((z) => [z, pct(z)]));
+    seg.innerHTML = opts.map(([v, l]) => `<button type="button" data-zoom="${v}" aria-pressed="${String(zoom.mode) === String(v)}">${l}</button>`).join('');
+    $('#zoom-now').textContent = zoom.mode === 'auto' ? `Auto is ${pct(zoom.auto)} on this screen` : `Set to ${pct(zoom.factor)}`;
+    $$('[data-zoom]', seg).forEach((b) => b.addEventListener('click', () => api.zoomSet(b.dataset.zoom === 'auto' ? 'auto' : +b.dataset.zoom).then(showZoom)));
+  }
+  function showZoom(z) {
+    if (!z) return;
+    zoom = z;
+    renderZoom();
+    moveIndicator(false);
+  }
+  api.onZoom(showZoom);
+  api.zoomGet().then(showZoom).catch(() => {});
 
   function renderAll() {
     renderCourses(); renderGuides(); renderSettings(); renderUsage(); renderInbox();
@@ -634,7 +660,9 @@
     const k = e.key.toLowerCase();
     if (k === '1' || k === '2' || k === '3') { e.preventDefault(); show(['courses', 'guides', 'settings'][+k - 1]); }
     else if (k === 'k') { e.preventDefault(); focusPrompt(); }
-    else if (k === '=' || k === '+' || k === '-' || k === '0') e.preventDefault();
+    else if (k === '=' || k === '+') { e.preventDefault(); api.zoomStep(1).then(showZoom); }
+    else if (k === '-') { e.preventDefault(); api.zoomStep(-1).then(showZoom); }
+    else if (k === '0') { e.preventDefault(); api.zoomStep(0).then(showZoom); }
   });
   window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
   api.onNav((v) => show(v));

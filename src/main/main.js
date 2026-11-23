@@ -82,9 +82,10 @@ function createWindow() {
 
   const wc = win.webContents;
 
-  // No pinch or keyboard zoom: it's an app, not a page.
+  // No pinch zoom like a web page; the interface size is set from Settings or Ctrl/Cmd + = and -.
   wc.setVisualZoomLevelLimits(1, 1);
-  wc.on('zoom-changed', () => wc.setZoomFactor(1));
+  wc.on('did-finish-load', applyZoom);
+  win.on('moved', () => { if (zoomMode === 'auto') applyZoom(); });
 
   // Never navigate away from the app; outside links go to the normal browser.
   wc.on('will-navigate', (e, url) => {
@@ -110,6 +111,36 @@ function createWindow() {
     if (isDev) items.push({ type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) });
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
+}
+
+// ---------- interface size ----------
+// Auto picks a size from the screen the window is on, so big monitors don't get tiny text.
+const ZOOMS = [0.9, 1, 1.1, 1.25, 1.5, 1.75];
+const zoomFile = () => path.join(app.getPath('userData'), 'zoom.json');
+let zoomMode = 'auto';
+function autoZoom() {
+  if (!win) return 1;
+  const w = screen.getDisplayMatching(win.getBounds()).workAreaSize.width;
+  return w >= 3200 ? 1.5 : w >= 2200 ? 1.25 : w >= 1800 ? 1.1 : 1;
+}
+const zoomFactor = () => (zoomMode === 'auto' ? autoZoom() : zoomMode);
+const zoomInfo = () => ({ mode: zoomMode, factor: zoomFactor(), auto: autoZoom(), levels: ZOOMS });
+function applyZoom() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.setZoomFactor(zoomFactor());
+  toWin('zoom:changed', zoomInfo());
+}
+function setZoom(mode) {
+  zoomMode = mode === 'auto' ? 'auto' : Math.min(1.75, Math.max(0.9, Number(mode) || 1));
+  try { fs.writeFileSync(zoomFile(), JSON.stringify({ mode: zoomMode })); } catch { /* fine */ }
+  applyZoom();
+  return zoomInfo();
+}
+function stepZoom(dir) {
+  if (!dir) return setZoom('auto');
+  const cur = zoomFactor();
+  const next = dir > 0 ? ZOOMS.find((z) => z > cur + 0.001) || 1.75 : [...ZOOMS].reverse().find((z) => z < cur - 0.001) || 0.9;
+  return setZoom(next);
 }
 
 // ---------- menus ----------
@@ -157,6 +188,11 @@ function buildMenu() {
       submenu: [
         ...tabs,
         { type: 'separator' },
+        { label: 'Bigger', accelerator: 'CmdOrCtrl+=', click: () => stepZoom(1) },
+        { label: 'Bigger', accelerator: 'CmdOrCtrl+Plus', visible: false, acceleratorWorksWhenHidden: true, click: () => stepZoom(1) },
+        { label: 'Smaller', accelerator: 'CmdOrCtrl+-', click: () => stepZoom(-1) },
+        { label: 'Auto size', accelerator: 'CmdOrCtrl+0', click: () => stepZoom(0) },
+        { type: 'separator' },
         { role: 'togglefullscreen' },
         ...(isDev ? [{ type: 'separator' }, { role: 'reload' }, { role: 'toggleDevTools' }] : []),
       ],
@@ -190,6 +226,8 @@ async function setupServices() {
   tools = createToolServer(store, extract);
   await tools.ready;
   try { usage = JSON.parse(fs.readFileSync(usageFile(), 'utf8')); } catch { usage = {}; }
+  try { zoomMode = JSON.parse(fs.readFileSync(zoomFile(), 'utf8')).mode ?? 'auto'; } catch { zoomMode = 'auto'; }
+  screen.on('display-metrics-changed', () => { if (zoomMode === 'auto') applyZoom(); });
   runner = new ClaudeRunner({
     store, tools,
     getUsage: () => usage,
@@ -258,6 +296,9 @@ const handlers = {
   'github:wait': async () => { await github.wait(); return github.link(); },
   'github:cancel': () => github.cancel(),
   'github:retryLink': () => github.link(),
+  'zoom:get': () => zoomInfo(),
+  'zoom:set': (_e, mode) => setZoom(mode),
+  'zoom:step': (_e, dir) => stepZoom(dir),
   'open:external': (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); },
   'open:dataFolder': () => shell.openPath(store.dir),
 };

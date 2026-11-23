@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('andromeda', {
   githubCancel: () => call('github:cancel'),
   githubRetry: () => call('github:retryLink'),
   onPushed: on('github:pushed'),
+  zoomGet: () => call('zoom:get'),
+  zoomSet: (mode) => call('zoom:set', mode),
+  zoomStep: (dir) => call('zoom:step', dir),
+  onZoom: on('zoom:changed'),
   openExternal: (url) => call('open:external', url),
   openDataFolder: () => call('open:dataFolder'),
 });

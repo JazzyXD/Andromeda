@@ -78,6 +78,10 @@
     githubWait: async () => { await sleep(1500); github.connected = true; github.login = 'JazzyXD'; github.repo = 'JazzyXD/Andromeda-data'; return github; },
     githubCancel: async () => {}, githubRetry: async () => github,
     onPushed: (f) => listeners.pushed.push(f),
+    zoomGet: async () => ({ mode: 'auto', factor: 1, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] }),
+    zoomSet: async (m) => ({ mode: m, factor: m === 'auto' ? 1 : m, auto: 1, levels: [0.9, 1, 1.1, 1.25, 1.5, 1.75] }),
+    zoomStep: async () => ({ mode: 'auto', factor: 1, auto: 1, levels: [] }),
+    onZoom() {},
     openExternal: async (u) => window.open(u), openDataFolder: async () => {},
   };
 })();
