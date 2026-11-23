@@ -2,7 +2,13 @@
 
 A night-sky learning app for your courses and study guides, run on your own Claude plan through Claude Code.
 
-## What works now (stage 2)
+## What works now (stage 3)
+
+- **Learning guides:** press **Make a guide** on anything in a course's Coming up, use **Plan a guide** in Guides, or ask for a guide in the chat. The plan screen fills in the course, test and weeks, guesses the kind of course (you confirm), and builds nothing until you press Build guide. Guides default to Opus at high effort.
+- **Built a week at a time** with the rules from your guide skills (shipped in `src/main/guide-rules/`). Each week saves and backs up as soon as it's done, so you can read week 1 while the rest builds. If you hit a Claude limit, the guide pauses and carries on by itself after the reset while Andromeda is open.
+- **Read and practise in the app:** the same layout, boxes, quizzes, confidence taps and typed blanks as your chat guides, in the night-sky colours (prints light). Scores and typed answers save to your data and GitHub backup.
+
+## Stage 2
 
 - **First open:** checks Claude Code is installed, and connects GitHub with a short code so your courses are backed up to your private `Andromeda-data` repo.
 - **Courses by prompting:** "Add Income Tax 2, Tue and Thu with Dan Carli", "The final is Dec 15", "Chapter 12 is taxable income for corporations". Claude can only use Andromeda's course tools and read your course files: no commands, no internet, nothing outside your Andromeda folder.
@@ -31,6 +37,6 @@ Shortcuts: Ctrl or Cmd + 1, 2, 3 switch tabs. Ctrl or Cmd + K jumps to the promp
 
 ## Where things live
 
-- `src/main/` the app itself: `claude.js` runs Claude Code locked down, `tools.js` the course tools, `data.js` your courses and their history, `extract.js` slide text, `github.js` backup
-- `src/renderer/` everything you see: `sky.js` draws the sky, `app.js` runs the screens
+- `src/main/` the app itself: `claude.js` runs Claude Code locked down, `tools.js` the course and guide tools, `data.js` your courses and their history, `guides.js` planning and building guides, `extract.js` slide text, `github.js` backup
+- `src/renderer/` everything you see: `sky.js` draws the sky, `galaxies.js` the distant galaxies, `app.js` runs the screens, `guide-page.js` the page a guide is shown in
 - `src/shared/constellations.js` the real constellation shapes used for courses

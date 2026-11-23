@@ -39,7 +39,7 @@
   const sky = window.AndromedaSky.createSky($('#sky'), { reduceMotion: reduced, twinkle: () => (twinkle / 100) * 0.9, darkness: () => darkness / 100 });
 
   // ---------- state ----------
-  const S = { courses: [], inbox: [], usage: {}, github: {}, claude: {}, dataDir: '', view: null, course: null };
+  const S = { courses: [], inbox: [], usage: {}, github: {}, claude: {}, dataDir: '', view: null, course: null, guides: [], subjects: {}, guide: null, plan: null, guideScroll: {}, guideStep: {} };
   const courseById = (id) => S.courses.find((c) => c.id === id);
   const conFor = (c) => CON.COURSE[c.constellation] || CON.COURSE.lyra;
 
@@ -99,6 +99,7 @@
     const up = (c.upcoming || []).map((u) => `<div class="cu-row${u.done ? ' done' : ''}">
         <span class="cu-dot"></span>
         <div class="cu-main"><b>${esc(u.title)}</b><span>${esc(u.covers || (u.done ? 'Done' : 'Scope not set yet'))}</span></div>
+        ${u.done ? '' : `<button type="button" class="pill-btn mg" data-test="${esc(u.id)}" title="Plan a learning guide for ${esc(u.title)}">Make a guide</button>`}
         <span class="cu-when">${esc([prettyDate(u.date) || 'Date not set', prettyTime(u.time)].filter(Boolean).join(' · '))}</span>
       </div>`).join('') || '<p class="muted">Nothing coming up. Try “The final is Dec 15”.</p>';
     const weeks = (c.weeks || []).map((w, i) => `<div class="wk"><span class="num">${i + 1}</span><div><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b>${w.files.length ? `<span>${esc(w.files.join(', '))}</span>` : ''}</div></div>`).join('')
@@ -119,11 +120,13 @@
       </div>
       <div class="cols">
         <section class="panel m"><h2>Weeks</h2>${weeks}</section>
-        <section class="panel m"><h2>Guides</h2><p class="muted">Guides for ${esc(c.name)} will show here. Guide building arrives in stage 3.</p></section>
+        <section class="panel m"><h2>Guides</h2>${(() => { const gs = S.guides.filter((g) => g.courseId === c.id); return gs.length ? gs.map((g) => `<button type="button" class="cg-row" data-guide="${esc(g.id)}"><b>${esc(g.title.replace(c.name + ': ', ''))}</b><span>${esc(guideStatus(g).text)}</span></button>`).join('') : `<p class="muted">No guides yet. Press Make a guide on anything in Coming up.</p>`; })()}</section>
         <section class="panel m"><h2>Course files</h2>${files}</section>
       </div></div>`;
     $('#back').addEventListener('click', closeCourse);
+    $$('.cg-row', $('#view-course')).forEach((b) => b.addEventListener('click', () => { show('guides'); setTimeout(() => openGuide(b.dataset.guide), 50); }));
     $$('.fd', $('#view-course')).forEach((b) => b.addEventListener('click', () => findDates(c.id, b.dataset.file)));
+    $$('.mg', $('#view-course')).forEach((b) => b.addEventListener('click', () => openPlan({ courseId: c.id, testId: b.dataset.test })));
   }
 
   // Opening and closing a course move like a tab change: the old screen drifts off with the stars
@@ -168,11 +171,189 @@
   }
 
   // ---------- Guides and Settings ----------
-  function renderGuides() {
-    $('#view-guides').innerHTML = `<div class="inner">
-      <div class="head m"><div><h1>Guides</h1><p>Every learning guide, each with its own constellation</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('guides'))}</p></div>
-      <div class="empty m"><p class="big">No guides yet.</p><p>Guide building arrives in stage 3. Your slides are already being saved with each course, ready for it.</p></div></div>`;
+  // ---------- Guides: the list, the plan screen and the reader ----------
+  const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  function guideStatus(g) {
+    const pieces = g.pieces || [], done = pieces.filter((p) => p.status === 'done').length;
+    const now = pieces.find((p) => p.status === 'building');
+    const frac = pieces.length ? done / pieces.length : 0;
+    if (g.status === 'done') return { text: 'Ready', frac: 1, tone: 'ok' };
+    if (g.status === 'paused') return { text: `Paused until ${g.pausedUntil ? clock(g.pausedUntil) : 'your limit resets'} · ${done} of ${pieces.length} parts`, frac, tone: 'wait' };
+    if (g.status === 'stopped') return { text: `Stopped · ${done} of ${pieces.length} parts`, frac, tone: 'wait' };
+    if (g.status === 'failed') return { text: `Couldn't finish ${(pieces.find((p) => p.error) || {}).label || 'a part'}`, frac, tone: 'bad' };
+    if (g.status === 'planned') return { text: 'Starting…', frac, tone: 'run' };
+    const step = S.guideStep[g.id];
+    return { text: `Writing ${now ? now.label : 'the next part'}${step ? ' · ' + step : ''} · ${done} of ${pieces.length} parts`, frac, tone: 'run' };
   }
+  const badgeArt = (g) => { const b = CON.GUIDE[g.badge] || Object.values(CON.GUIDE)[0]; return `<svg viewBox="0 0 64 64" width="44" height="44" aria-hidden="true">${conArt(b.p, b.e, 1.6, 3)}</svg>`; };
+
+  // The prompt box steps aside where there's nothing to ask: Settings, the guide plan, and a guide being read.
+  const placeDock = () => $('.dock').toggleAttribute('data-off', !S.course && (S.view === 'settings' || !!S.guide || (S.view === 'guides' && !!S.plan)));
+
+  function renderGuides() {
+    const el = $('#view-guides');
+    placeDock();
+    const head = `<div class="head m"><div><h1>Guides</h1><p>${S.guides.length ? `${S.guides.length} guide${S.guides.length === 1 ? '' : 's'}` : 'Learning guides built from your slides'}</p></div><p class="overhead">Overhead · ${esc(sky.constellationName('guides'))}</p></div>`;
+    if (S.plan) { el.innerHTML = `<div class="inner">${head}${planHtml()}</div>`; wirePlan(); return; }
+    const cards = S.guides.map((g) => {
+      const st = guideStatus(g);
+      return `<button type="button" class="gcard m" data-guide="${esc(g.id)}">
+        <div class="gtop">${badgeArt(g)}<div class="t"><small>${esc(g.courseName)}</small><b>${esc(g.title.replace(g.courseName + ': ', ''))}</b><span>${esc(g.weeks.map((w) => w.label).join(', '))}</span></div></div>
+        <div class="bar-row"><span class="meter"><i style="width:${Math.round(st.frac * 100)}%;${st.tone === 'wait' ? 'background:var(--gold)' : st.tone === 'bad' ? 'background:#E8A07A' : ''}"></i></span><span>${esc(st.text)}</span></div>
+      </button>`;
+    }).join('');
+    el.innerHTML = `<div class="inner">${head}
+      <div class="g-actions m"><button type="button" class="btn" id="g-new">Plan a guide</button></div>
+      ${S.guides.length ? `<div class="ggrid">${cards}</div>` : `<div class="empty m"><p class="big">No guides yet.</p><p>Plan one here, or press Make a guide on anything in a course's Coming up.</p></div>`}</div>`;
+    $('#g-new').addEventListener('click', () => openPlan({}));
+    $$('.gcard', el).forEach((b) => b.addEventListener('click', () => openGuide(b.dataset.guide)));
+  }
+
+  // The plan: everything a guide needs, filled in as far as the app can, with nothing built until Start.
+  async function openPlan({ courseId, testId }) {
+    const c = courseById(courseId) || S.courses[0];
+    if (!c) { toast('Add a course first.'); return; }
+    S.plan = { courseId: c.id, testId: testId || '', weekIds: [], subjects: [], exam: '', shortOnTime: false, model: 'opus', effort: 'high', busy: false };
+    planCourse(c);
+    try { S.plan.subjects = await api.guideGuess(c.name); } catch { S.plan.subjects = ['procedural']; }
+    if (S.view !== 'guides' || S.course) show('guides'); else renderGuides();
+    renderGuides();
+  }
+  function planCourse(c) {
+    const P = S.plan;
+    P.courseId = c.id;
+    if (P.testId && !(c.upcoming || []).some((u) => u.id === P.testId)) P.testId = '';
+    P.weekIds = (c.weeks || []).filter((w) => w.files.length).map((w) => w.id);
+  }
+  const daysTo = (d) => (d ? Math.ceil((new Date(d + 'T00:00:00') - new Date(new Date().toDateString())) / 864e5) : null);
+  function planHtml() {
+    const P = S.plan, c = courseById(P.courseId);
+    const test = (c.upcoming || []).find((u) => u.id === P.testId);
+    const weeks = (c.weeks || []).map((w) => `<label class="pl-week${w.files.length ? '' : ' off'}"><input type="checkbox" data-week="${esc(w.id)}" ${P.weekIds.includes(w.id) ? 'checked' : ''} ${w.files.length ? '' : 'disabled'}><span><b>${esc(w.label)}${w.title ? ': ' + esc(w.title) : ''}</b><small>${w.files.length ? esc(w.files.join(', ')) : 'No files yet'}</small></span></label>`).join('')
+      || `<p class="muted">${esc(c.name)} has no weeks yet. Ask below, like “Chapter 12 is taxable income for corporations”, and add its slides.</p>`;
+    const days = test ? daysTo(test.date) : null;
+    const u = S.usage && S.usage.fiveHour;
+    const warn = u && u.pct >= 0.7 ? `<p class="pl-warn">Your 5-hour limit is at ${Math.round(u.pct * 100)}%. The guide will pause when it runs out and carry on by itself after ${u.resetsAt ? clock(u.resetsAt) : 'it resets'}, as long as Andromeda is open.</p>` : '';
+    const modelOpts = MODELS.map(([v, l]) => `<option value="${v}" ${P.model === v ? 'selected' : ''}>${l}</option>`).join('');
+    const effortOpts = EFFORT.map(([v, l]) => `<option value="${v}" ${P.effort === v ? 'selected' : ''}>${l}</option>`).join('');
+    const nWeeks = P.weekIds.length;
+    return `<section class="panel plan m" aria-label="Plan a guide">
+      <div class="pl-head"><h2>Plan a learning guide</h2><button type="button" class="pill-btn" id="pl-cancel">Cancel</button></div>
+      <div class="pl-grid">
+        <label class="pl-f"><span>Course</span><select id="pl-course">${S.courses.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="pl-f"><span>For</span><select id="pl-test"><option value="">No particular test</option>${(c.upcoming || []).filter((x) => !x.done).map((x) => `<option value="${esc(x.id)}" ${x.id === P.testId ? 'selected' : ''}>${esc(x.title)}${x.date ? ' · ' + esc(prettyDate(x.date)) : ''}</option>`).join('')}</select></label>
+      </div>
+      <div class="pl-f"><span>Weeks</span><div class="pl-weeks">${weeks}</div></div>
+      <div class="pl-f"><span>Kind of course</span><div class="seg pl-subj" role="group" aria-label="Kind of course">${Object.entries(S.subjects).map(([k, l]) => `<button type="button" data-subj="${k}" aria-pressed="${P.subjects.includes(k)}">${esc(l)}</button>`).join('')}</div><small class="pl-note">Guessed from the course name. Pick up to two.</small></div>
+      <label class="pl-f"><span>Exam format</span><input type="text" id="pl-exam" value="${esc(P.exam)}" placeholder="For example: 40 multiple choice and 2 short answer, 2 hours"><small class="pl-note">Optional. Practice questions follow it.</small></label>
+      ${days != null && days >= 0 && days < 4 ? `<label class="pl-check"><input type="checkbox" id="pl-short" ${P.shortOnTime ? 'checked' : ''}> <span>Short on time: ${esc(test.title)} is ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}. Tighter notes, most likely topics first.</span></label>` : ''}
+      <div class="pl-grid">
+        <label class="pl-f"><span>Model</span><select id="pl-model">${modelOpts}</select></label>
+        <label class="pl-f"><span>Effort</span><select id="pl-effort">${effortOpts}</select></label>
+      </div>
+      ${warn}
+      <div class="pl-foot"><span class="muted">${nWeeks ? `Builds ${nWeeks} week${nWeeks === 1 ? '' : 's'}${nWeeks > 1 ? ', a final quiz' : ''} and an opening, one at a time. You can read each week as soon as it's done.` : 'Pick at least one week with files.'}</span><button type="button" class="btn" id="pl-start" ${nWeeks && P.subjects.length && !P.busy ? '' : 'disabled'}>Build guide</button></div>
+    </section>`;
+  }
+  function wirePlan() {
+    const P = S.plan, el = $('#view-guides'), re = () => { const y = el.scrollTop; renderGuides(); el.scrollTop = y; };
+    $('#pl-cancel').addEventListener('click', () => { S.plan = null; renderGuides(); });
+    $('#pl-course').addEventListener('change', async (e) => {
+      const c = courseById(e.target.value); planCourse(c); P.testId = '';
+      try { P.subjects = await api.guideGuess(c.name); } catch { /* keep */ }
+      re();
+    });
+    $('#pl-test').addEventListener('change', (e) => { P.testId = e.target.value; P.shortOnTime = false; re(); });
+    $$('[data-week]', el).forEach((b) => b.addEventListener('change', () => { P.weekIds = $$('[data-week]', el).filter((x) => x.checked).map((x) => x.dataset.week); re(); }));
+    $$('[data-subj]', el).forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.subj;
+      P.subjects = P.subjects.includes(k) ? P.subjects.filter((x) => x !== k) : [...P.subjects, k].slice(-2);
+      re();
+    }));
+    $('#pl-exam').addEventListener('input', (e) => { P.exam = e.target.value; });
+    const sh = $('#pl-short'); if (sh) sh.addEventListener('change', () => { P.shortOnTime = sh.checked; });
+    $('#pl-model').addEventListener('change', (e) => { P.model = e.target.value; });
+    $('#pl-effort').addEventListener('change', (e) => { P.effort = e.target.value; });
+    $('#pl-start').addEventListener('click', async () => {
+      P.busy = true; $('#pl-start').disabled = true;
+      try {
+        const c = courseById(P.courseId);
+        const weekIds = (c.weeks || []).map((w) => w.id).filter((id) => P.weekIds.includes(id));
+        const g = await api.guideCreate({ courseId: P.courseId, testId: P.testId || null, weekIds, subjects: P.subjects, exam: P.exam, shortOnTime: P.shortOnTime, model: P.model, effort: P.effort });
+        S.plan = null;
+        S.guides = [g, ...S.guides.filter((x) => x.id !== g.id)];
+        renderGuides();
+        openGuide(g.id);
+      } catch (e) { P.busy = false; toast(e.message); re(); }
+    });
+  }
+
+  // Reading a guide: it sits in a locked-down frame and reports scores and scroll position back.
+  async function openGuide(id) {
+    const g = S.guides.find((x) => x.id === id);
+    if (!g) return;
+    S.guide = id;
+    renderGuideBar();
+    await loadGuide();
+    swapScreens($('#view-guides'), $('#view-guide'), { dx: 0, dy: -1, dur: 900 }, () => S.guide === id);
+    placeDock();
+  }
+  function closeGuide() {
+    if (!S.guide) return;
+    S.guide = null;
+    renderGuides();
+    swapScreens($('#view-guide'), $('#view-guides'), { dx: 0, dy: 1, dur: 900 }, () => !S.guide);
+  }
+  function renderGuideBar() {
+    const g = S.guides.find((x) => x.id === S.guide);
+    if (!g) return;
+    let v = $('#view-guide');
+    if (!$('#gr-frame', v)) {
+      v.innerHTML = `<div class="gr"><div class="gr-bar m"><button type="button" class="back" id="gr-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>All guides</button><div class="gr-info" id="gr-info"></div><div class="gr-act" id="gr-act"></div></div><div class="gr-frame m"><iframe id="gr-frame" sandbox="allow-scripts" title="Guide"></iframe></div></div>`;
+      $('#gr-back', v).addEventListener('click', closeGuide);
+    }
+    const st = guideStatus(g);
+    $('#gr-info', v).innerHTML = `<b>${esc(g.title)}</b><span class="gr-st ${st.tone}">${esc(st.text)}</span>`;
+    const act = $('#gr-act', v);
+    const busy = ['building', 'planned', 'paused'].includes(g.status);
+    act.innerHTML = `${busy ? '<button type="button" class="pill-btn" id="gr-stop">Stop building</button>' : ''}${['stopped', 'failed'].includes(g.status) ? '<button type="button" class="pill-btn" id="gr-resume">Carry on building</button>' : ''}<button type="button" class="pill-btn" id="gr-del">Delete</button>`;
+    const on = (sel, fn) => { const b = $(sel, act); if (b) b.addEventListener('click', fn); };
+    on('#gr-stop', () => api.guideStop(g.id).catch((e) => toast(e.message)));
+    on('#gr-resume', () => api.guideResume(g.id).catch((e) => toast(e.message)));
+    on('#gr-del', () => {
+      act.innerHTML = `<span class="muted">Delete this guide and its scores?</span><button type="button" class="btn danger" id="gr-yes">Delete</button><button type="button" class="btn ghost" id="gr-no">Keep it</button>`;
+      $('#gr-no', act).addEventListener('click', renderGuideBar);
+      $('#gr-yes', act).addEventListener('click', async () => { const gid = g.id; closeGuide(); try { await api.guideDelete(gid); } catch (e) { toast(e.message); } });
+    });
+  }
+  async function loadGuide() {
+    const id = S.guide;
+    if (!id) return;
+    try {
+      const data = await api.guideGet(id);
+      if (S.guide !== id) return;
+      $('#gr-frame').srcdoc = window.AndromedaGuidePage.page({ ...data, scroll: S.guideScroll[id] || 0 });
+    } catch (e) { toast(e.message); }
+  }
+  window.addEventListener('message', (e) => {
+    const f = $('#gr-frame');
+    if (!f || e.source !== f.contentWindow || !S.guide || !e.data || typeof e.data !== 'object') return;
+    if (e.data.andromeda === 'progress' && typeof e.data.k === 'string') api.guideProgress(S.guide, e.data.k, e.data.v).catch(() => {});
+    if (e.data.andromeda === 'scroll' && typeof e.data.y === 'number') S.guideScroll[S.guide] = e.data.y;
+  });
+  api.onGuides((list) => {
+    S.guides = list;
+    if (S.view === 'guides' && !S.plan && !S.guide) renderGuides();
+    if (S.guide) renderGuideBar();
+    if (S.course) { const c = courseById(S.course); if (c) renderCourse(c); }
+  });
+  api.onGuidePart((p) => { if (S.guide === p.id) loadGuide(); });
+  api.onGuideStep((p) => {
+    S.guideStep[p.id] = p.label;
+    if (S.guide === p.id) renderGuideBar();
+    else if (S.view === 'guides' && !S.plan && !S.guide) renderGuides();
+  });
+  api.onUsage((u) => { S.usage = u; renderUsage(); });
 
   function usageText(u, key, label) {
     const w = u && u[key];
@@ -211,7 +392,7 @@
         <h2>Claude</h2>
         <p>${cl.installed ? `Claude Code ${esc(cl.version || '')} is set up on this laptop. Prompts use your own Claude plan.` : 'Claude Code isn\'t installed on this laptop yet.'}</p>
         ${cl.apiKey ? '<p class="warn">An API key is set on this laptop. Andromeda ignores it so prompts use your Pro plan, but other apps may bill it.</p>' : ''}
-        <div class="row"><span class="pill">Course prompts default to Haiku at medium effort. Change it under the prompt box.</span></div>
+        <div class="row"><span class="pill">Course prompts default to Haiku at medium effort; change it under the prompt box. Guides default to Opus at high effort, set on each guide's plan.</span></div>
       </div>
       <div class="panel m">
         <h2>GitHub backup</h2>
@@ -271,7 +452,7 @@
   // ---------- tabs and screen changes ----------
   const PLACEHOLDER = {
     courses: 'Add a course, drop in slides, or set a test date…',
-    guides: 'Guide building arrives in stage 3…',
+    guides: 'Ask about your courses, or ask for a guide…',
     settings: 'Ask about your courses…',
   };
   function setPlaceholder() {
@@ -290,17 +471,19 @@
   }
 
   function show(id, { instant = false } = {}) {
-    if (id === S.view && !S.course) return;
+    if (id === S.view && !S.course && !S.guide) { if (S.plan) { S.plan = null; renderGuides(); } return; }
     if (id === S.view && S.course) { closeCourse(); return; }
-    const prevEl = S.course ? $('#view-course') : S.view ? $(`#view-${S.view}`) : null;
+    if (id === S.view && S.guide) { closeGuide(); return; }
+    const prevEl = S.course ? $('#view-course') : S.guide ? $('#view-guide') : S.view ? $(`#view-${S.view}`) : null;
     const prevId = S.view;
     S.course = null;
+    if (S.guide) { S.guide = null; renderGuides(); }
     S.view = id;
     $$('.tabs [role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.view === id)));
     moveIndicator(!instant && !!prevId);
     setPlaceholder();
     // Settings has nothing to ask Claude about, so the prompt box steps aside there.
-    $('.dock').toggleAttribute('data-off', id === 'settings');
+    placeDock();
     const next = $(`#view-${id}`);
     const plan = sky.plan(id);
     sky.goTo(id, { instant: !!prevId && instant });
@@ -565,6 +748,14 @@
     return box;
   }
 
+  function guideOfferCard(ev) {
+    const box = document.createElement('div');
+    box.className = 'offer';
+    box.innerHTML = `<div><b>Plan a guide${ev.test ? ' for ' + esc(ev.test) : ''}</b><span>${esc(ev.course)}. You pick the weeks and check the details before anything is built.</span></div><button type="button" class="btn">Open the plan</button>`;
+    $('.btn', box).addEventListener('click', () => openPlan({ courseId: ev.courseId, testId: ev.testId }));
+    return box;
+  }
+
   function startTurn(text) {
     const el = document.createElement('div');
     el.className = 'turn';
@@ -691,6 +882,7 @@
       case 'confirm': $('.extras', el).appendChild(confirmCard(ev.pending)); break;
       case 'dates': if (turn.job) $('.extras', el).appendChild(datesCard(turn.job, ev.items)); break;
       case 'offer': $('.extras', el).appendChild(offerCard(ev)); break;
+      case 'guide-offer': $('.extras', el).appendChild(guideOfferCard(ev)); break;
       case 'usage': S.usage = ev.usage; renderUsage(); break;
       case 'warn': toast(ev.message); break;
       case 'done': finishTurn(ev); break;
@@ -699,7 +891,7 @@
     scrollLog();
   });
 
-  api.onData((d) => { S.courses = d.courses; S.inbox = d.inbox; renderAll(); });
+  api.onData((d) => { S.courses = d.courses; S.inbox = d.inbox; if (S.plan && !courseById(S.plan.courseId)) S.plan = null; renderAll(); });
 
   // ---------- model and effort ----------
   const MODELS = [['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];

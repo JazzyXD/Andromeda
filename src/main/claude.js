@@ -17,6 +17,8 @@ const FRIENDLY = {
   mcp__andromeda__attach_files: 'Filing slides',
   mcp__andromeda__delete_course: 'Asking before deleting',
   mcp__andromeda__offer_find_dates: 'Offering Find dates',
+  mcp__andromeda__offer_guide: 'Offering a guide plan',
+  mcp__andromeda__save_part: 'Saving to the guide',
   mcp__andromeda__propose_dates: 'Listing the dates found',
   mcp__andromeda__remove_files: 'Asking before removing files',
 };
@@ -38,6 +40,7 @@ Rules:
 - Deleting a course or removing files: call the tool, then tell the user in one line that it's waiting for their OK.
 - Files under "Waiting to be filed" go into a course with attach_files once you know which course.
 - To pull due dates out of a course file (an outline, schedule or critical path), call offer_find_dates instead of reading the file yourself.
+- If the user wants a learning guide, call offer_guide (with the test, if they named one). Never write a guide or long notes in the chat.
 - Changing something that already exists (renaming a test, moving a date, relabelling a week) uses change_upcoming or change_week on that item. The add tools are only for things that don't exist yet. If a change tool says it can't find the item or finds several, ask the user which one.`;
 
 function parseUsage(info, prev) {
@@ -101,13 +104,13 @@ Call propose_dates exactly once with everything, then reply with one short line.
     return this.run({ prompt: `Find the dates in ${f.name}.`, model: 'sonnet', effort: 'medium', mode: 'dates', system, label: f.name }, emit);
   }
 
-  async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null, mode = 'course', system: customSystem = null }, emit) {
+  async run({ prompt, model = 'haiku', effort = 'medium', sessionId = null, mode = 'course', system: customSystem = null, ctx = null }, emit) {
     if (this.active) return emit({ type: 'done', ok: false, error: { code: 'busy', message: 'Claude is still working on the last prompt.' } });
     const file = await bin.find('claude');
     if (!file) return emit({ type: 'done', ok: false, error: { code: 'install', message: 'Claude Code isn\'t installed on this laptop.' } });
 
     const runId = crypto.randomUUID();
-    const handle = this.tools.open((e) => emit(e), mode);
+    const handle = this.tools.open((e) => emit(e), mode, ctx);
     const runDir = this.store.p('.andromeda', 'run');
     await fsp.mkdir(runDir, { recursive: true });
     const summary = await this.store.writeSummary();
@@ -130,7 +133,7 @@ Call propose_dates exactly once with everything, then reply with one short line.
       '--allowedTools', ['Read', ...this.tools.names(mode)].join(','),
       '--permission-mode', 'dontAsk',
       '--disable-slash-commands',
-      '--max-turns', mode === 'dates' ? '15' : '40',
+      '--max-turns', mode === 'dates' ? '15' : mode === 'guide' ? '30' : '40',
     ];
     if (sessionId) args.push('--resume', sessionId);
 

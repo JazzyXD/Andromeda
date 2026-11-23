@@ -4,7 +4,7 @@
   if (window.andromeda) return;
   const P = window.AndromedaPreview;
   const q = new URLSearchParams(location.search);
-  const listeners = { claude: [], data: [], pushed: [] };
+  const listeners = { claude: [], data: [], pushed: [], guides: [], part: [], step: [], usage: [] };
   const emit = (k, v) => listeners[k].forEach((f) => f(v));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const year = new Date().getFullYear();
@@ -13,8 +13,8 @@
     id: c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: c.name, constellation: c.con.toLowerCase(),
     instructor: c.meta.split(' · ')[1] || '', schedule: c.meta.split(' · ')[0] || '', school: '', notes: '',
     upcoming: c.none ? [] : [{ id: 'u' + i, title: c.up, date: i % 3 ? '' : `${year}-12-${10 + i}`, time: '', covers: '', done: false }],
-    weeks: i ? [] : [{ id: 'w1', label: 'Chapter 12', title: 'Taxable income and tax payable for corporations', files: ['Chapter 12 slides.pptx'] }, { id: 'w2', label: 'Chapter 13', title: 'Other issues in corporate taxation', files: [] }],
-    files: i ? [] : [{ name: 'Chapter 12 slides.pptx', kind: 'pptx', text: 'x', note: '2 hidden slides skipped' }, { name: 'Course outline.pdf', kind: 'pdf', text: 'x', note: '' }],
+    weeks: i ? [] : [{ id: 'w1', label: 'Chapter 12', title: 'Taxable income and tax payable for corporations', files: ['Chapter 12 slides.pptx'] }, { id: 'w2', label: 'Chapter 13', title: 'Other issues in corporate taxation', files: ['Chapter 13 slides.pptx'] }, { id: 'w3', label: 'Chapter 14', title: 'Integration', files: [] }],
+    files: i ? [] : [{ name: 'Chapter 12 slides.pptx', kind: 'pptx', text: 'x', note: '2 hidden slides skipped' }, { name: 'Chapter 13 slides.pptx', kind: 'pptx', text: 'x', note: '' }, { name: 'Course outline.pdf', kind: 'pdf', text: 'x', note: '' }],
     created: String(i), updated: '',
   }));
   let inbox = [];
@@ -54,11 +54,37 @@
     out({ type: 'done', ok: true, text: reply, changes, pending: [], stepId: 'abc1234', sessionId: 's', model: 'haiku', tokens: { input: 12, output: 96, cacheRead: 1840, cacheWrite: 310 } });
   }
 
+  // ---- pretend guide building, for checking the screens ----
+  const SUBJ = { procedural: 'Procedures and calculations', rules: 'Rules and standards', sciences: 'Sciences', humanities: 'Humanities', 'social-sciences': 'Social sciences' };
+  let guides = [];
+  const gparts = {}, gprog = {};
+  const sampleWeek = (n, label) => `<h2 id="w${n}">${label}: Taxable income for corporations</h2><p class="meta">Slides: Chapter ${11 + n} slides.pptx</p>
+<h3 id="w${n}-t1">Net income to taxable income</h3><p><b>Net income for tax purposes</b> starts from accounting income and adjusts for items the Act treats differently. The adjustments add back amounts that were deducted for accounting but aren't allowed for tax, and subtract amounts the Act allows that accounting didn't record.</p>
+<div class="box key"><div class="label">KEY: Division C deductions <span class="src">slide 6</span></div><p>Taxable income equals net income for tax purposes minus Division C deductions, such as net capital losses carried over and charitable donations.</p></div>
+<p>For example, a corporation with $400,000 of net income and $20,000 of donations has taxable income of $380,000 before any loss carryovers.</p>
+<div class="box watch"><div class="label">WATCH OUT</div><p>Donations are a deduction for a corporation but a credit for an individual. Mixing the two is the most common slip.</p></div>
+<h3 id="w${n}-t2">Worked example</h3><div class="box example"><div class="label">EXAMPLE: from net income to taxable income</div><div class="tw"><table><tbody><tr><td>Net income for tax purposes</td><td class="n">400,000</td></tr><tr><td>Less: charitable donations</td><td class="n">(20,000)</td></tr><tr class="final"><td>Taxable income</td><td class="n"><input class="blank" data-ans="380000" aria-label="Taxable income"></td></tr></tbody></table></div></div>
+<details class="answers"><summary>Answers: try first (worked example)</summary><div class="inner"><p>Taxable income is 380,000: 400,000 minus 20,000 of donations.</p></div></details>
+<div class="box try quiz" id="w${n}-quiz" data-title="${label} quiz" data-ask><div class="q" data-a="B" data-hint="Is it a deduction or a credit for a corporation?"><p class="stem">A corporation donates $15,000 to a registered charity. How does it affect the corporation's tax?</p><ol type="A"><li>A non-refundable tax credit</li><li>A Division C deduction from net income</li><li>An expense in net income for tax purposes</li></ol><div class="why">Corporations deduct donations in Division C. A credit is how individuals get relief, which is the tempting wrong answer.</div></div><div class="q" data-a="A"><p class="stem">True or false: taxable income can be lower than net income for tax purposes.</p><ol type="A"><li>True</li><li>False</li></ol><div class="why">Division C deductions come off net income, so taxable income is often lower.</div></div></div>`;
+  const gemit = () => emit('guides', guides.map((g) => ({ ...g, pieces: g.pieces.map((p) => ({ ...p })) })));
+  async function fakeBuild(g) {
+    for (const p of g.pieces) {
+      if (g.status === 'stopped') return;
+      g.status = 'building'; p.status = 'building'; gemit();
+      for (const l of ['Read Chapter slides.md', 'Saving to the guide']) { emit('step', { id: g.id, piece: p.id, label: l }); await sleep(q.has('fast') ? 150 : 900); }
+      gparts[g.id][p.id] = p.id === 'start' ? `<h2 id="start">Before you start</h2><p>This guide covers how a corporation gets from accounting income to taxable income, then to tax payable.</p><p>Read a topic, close the guide and write your notes from memory, then check what you missed. Take the week quiz before moving on. It asks how sure you feel first, and your scores save in Andromeda.</p><div class="box try quiz" id="warmup-quiz" data-title="Warm-up: guess first"><div class="q" data-a="A"><p class="stem">Which comes first?</p><ol type="A"><li>Net income for tax purposes</li><li>Taxable income</li></ol><div class="why">Taxable income is built from net income.</div></div></div>`
+        : p.id === 'finish' ? `<div class="box try quiz" id="final-quiz" data-title="Final quiz" data-ask><div class="q" data-a="C"><p class="stem">Which is a Division C deduction?</p><ol type="A"><li>CCA</li><li>Salaries</li><li>Net capital losses carried over</li></ol><div class="why">Carryovers are Division C.</div></div></div>`
+        : sampleWeek(+p.id.slice(1), p.label);
+      p.status = 'done'; gemit(); emit('part', { id: g.id, piece: p.id });
+    }
+    g.status = 'done'; gemit();
+  }
+
   window.andromeda = {
     mock: true,
     platform: 'web',
     onNav() {}, onFocusPrompt() {}, popupMenu() {},
-    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.2.7' }),
+    state: async () => ({ courses, inbox, usage, github, claude: { installed: !q.has('noclaude'), version: '2.1.330' }, dataDir: '~/Documents/Andromeda', version: '0.3.0', guides, subjects: SUBJ }),
     claudeStatus: async () => ({ installed: true, version: '2.1.330' }),
     run: async (req) => { fakeRun(req); return true; },
     stop: async () => {},
@@ -102,5 +128,26 @@
     zoomStep: async () => ({ mode: 'auto', factor: 1, auto: 1, levels: [] }),
     onZoom() {},
     openExternal: async (u) => window.open(u), openDataFolder: async () => {},
+    guideGuess: async (name) => (/tax/i.test(name) ? ['procedural', 'rules'] : /audit/i.test(name) ? ['rules'] : ['procedural']),
+    guideCreate: async (plan) => {
+      const c = courses.find((x) => x.id === plan.courseId), t = c.upcoming.find((u) => u.id === plan.testId);
+      const weeks = c.weeks.filter((w) => plan.weekIds.includes(w.id));
+      const g = { id: 'g' + Date.now(), title: `${c.name}: ${t ? t.title : weeks.map((w) => w.label).join(' to ')}`, badge: Object.keys(window.AndromedaConstellations.GUIDE)[guides.length % 6], courseId: c.id, courseName: c.name,
+        test: t ? { id: t.id, title: t.title, date: t.date } : null, weeks: weeks.map((w) => ({ id: w.id, label: w.label, title: w.title, files: w.files })), subjects: plan.subjects, exam: plan.exam, model: plan.model, effort: plan.effort,
+        pieces: [...weeks.map((w, i) => ({ id: 'w' + (i + 1), label: w.label, status: 'waiting' })), ...(weeks.length > 1 ? [{ id: 'finish', label: 'Final quiz', status: 'waiting' }] : []), { id: 'start', label: 'Opening', status: 'waiting' }],
+        status: 'planned', pausedUntil: null, created: new Date().toISOString() };
+      guides.unshift(g); gparts[g.id] = {}; gprog[g.id] = {};
+      setTimeout(() => fakeBuild(g), 300);
+      return { ...g };
+    },
+    guideGet: async (id) => ({ guide: { ...guides.find((g) => g.id === id) }, parts: { ...gparts[id] }, progress: { ...gprog[id] } }),
+    guideStop: async (id) => { const g = guides.find((x) => x.id === id); g.status = 'stopped'; gemit(); },
+    guideResume: async (id) => { const g = guides.find((x) => x.id === id); g.pieces.forEach((p) => { if (p.status !== 'done') p.status = 'waiting'; }); g.status = 'building'; fakeBuild(g); return true; },
+    guideDelete: async (id) => { guides = guides.filter((g) => g.id !== id); gemit(); return true; },
+    guideProgress: async (id, k, v) => { gprog[id][k] = v; window.__lastProgress = { id, k, v }; return true; },
+    onGuides: (f) => listeners.guides.push(f),
+    onGuidePart: (f) => listeners.part.push(f),
+    onGuideStep: (f) => listeners.step.push(f),
+    onUsage: (f) => listeners.usage.push(f),
   };
 })();

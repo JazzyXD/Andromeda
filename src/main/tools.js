@@ -9,8 +9,9 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { Invalid } = require('./data');
 
 const TOOL_NAMES = {
-  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'delete_course', 'remove_files'],
+  course: ['add_courses', 'update_course', 'add_upcoming', 'change_upcoming', 'remove_upcoming', 'add_weeks', 'change_week', 'attach_files', 'offer_find_dates', 'offer_guide', 'delete_course', 'remove_files'],
   dates: ['propose_dates'],
+  guide: ['save_part'],
 };
 
 function createToolServer(store, extract) {
@@ -19,6 +20,7 @@ function createToolServer(store, extract) {
   function build(run) {
     const server = new McpServer({ name: 'andromeda', version: '1.0.0' });
     if (run.mode === 'dates') return buildDates(server, run);
+    if (run.mode === 'guide') return buildGuide(server, run);
     const course = z.string().describe('Course name or id');
     const wrap = (fn) => async (args) => {
       try {
@@ -105,6 +107,20 @@ function createToolServer(store, extract) {
       }
     });
 
+    server.registerTool('offer_guide', {
+      description: 'When the user wants a learning guide (for a test, or for some weeks), offer to open the guide plan instead of writing one in the chat. Shows a button; the user plans and starts it.',
+      inputSchema: { course, test: z.string().optional().describe('The Coming up item it is for: its id or name') },
+    }, async ({ course: ref, test }) => {
+      try {
+        const c = await store.findCourse(ref);
+        const t = test ? c.upcoming.find((u) => u.id === test || u.title.toLowerCase() === String(test).toLowerCase()) : null;
+        run.onEvent({ type: 'guide-offer', courseId: c.id, course: c.name, testId: t ? t.id : null, test: t ? t.title : null });
+        return { content: [{ type: 'text', text: 'The guide plan button is showing. Tell the user in one line to click it.' }] };
+      } catch (e) {
+        return { content: [{ type: 'text', text: 'Not done: ' + (e instanceof Invalid ? e.message : 'could not find that.') }], isError: true };
+      }
+    });
+
     server.registerTool('delete_course', {
       description: 'Ask to delete a whole course. The user must confirm on screen; nothing is deleted by this call.',
       inputSchema: { course },
@@ -115,6 +131,23 @@ function createToolServer(store, extract) {
       inputSchema: { course, files: z.array(z.string()) },
     }, ask('remove_files'));
 
+    return server;
+  }
+
+  // Guide building: one tool to save the piece being written. Andromeda checks it first.
+  function buildGuide(server, run) {
+    server.registerTool('save_part', {
+      description: 'Save this piece of the learning guide: its complete HTML, using the guide-core markup patterns.',
+      inputSchema: { html: z.string().describe('The complete HTML for this piece') },
+    }, async ({ html }) => {
+      try {
+        const r = await run.ctx.save(html);
+        if (r.ok) return { content: [{ type: 'text', text: 'Saved.' }] };
+        return { content: [{ type: 'text', text: 'Not saved. Fix these, then call save_part again with the whole piece:\n- ' + r.problems.join('\n- ') }], isError: true };
+      } catch {
+        return { content: [{ type: 'text', text: 'Not saved: something went wrong on Andromeda\'s side. Try save_part once more.' }], isError: true };
+      }
+    });
     return server;
   }
 
@@ -165,9 +198,9 @@ function createToolServer(store, extract) {
     ready,
     names: (mode = 'course') => TOOL_NAMES[mode].map((t) => `mcp__andromeda__${t}`),
     // One private key per prompt; the connection refuses anything else.
-    open(onEvent, mode = 'course') {
+    open(onEvent, mode = 'course', ctx = null) {
       const key = crypto.randomBytes(24).toString('hex');
-      const run = { mode, changes: [], pending: [], proposed: null, onEvent };
+      const run = { mode, changes: [], pending: [], proposed: null, onEvent, ctx };
       runs.set(key, run);
       return {
         key, run,

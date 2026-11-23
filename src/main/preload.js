@@ -41,4 +41,16 @@ contextBridge.exposeInMainWorld('andromeda', {
   onZoom: on('zoom:changed'),
   openExternal: (url) => call('open:external', url),
   openDataFolder: () => call('open:dataFolder'),
+
+  guideGet: (id) => call('guides:get', id),
+  guideGuess: (courseName) => call('guides:guess', courseName),
+  guideCreate: (plan) => call('guides:create', plan),
+  guideStop: (id) => call('guides:stop', id),
+  guideResume: (id) => call('guides:resume', id),
+  guideDelete: (id) => call('guides:delete', id),
+  guideProgress: (id, k, v) => call('guides:progress', { id, k, v }),
+  onGuides: on('guides:changed'),
+  onGuidePart: on('guide:part'),
+  onGuideStep: on('guide:step'),
+  onUsage: on('usage'),
 });

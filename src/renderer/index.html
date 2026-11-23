@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-uUP3tWohvmKcvQiCQAmdpiv/7GRPhwdolS6En6EFYm0=' 'sha256-tgFdeUs+CBw7/lBbGtxiOS65wZ1ltcsplkgGrrKcLCA=' 'sha256-1aleVOJLPcZEi3v/O7kraZAAWk2FJZuEHbRuv5OcwRc=' 'sha256-bsPRNmmaGLg4DKOmYZQalW3IAMuDOdQWVluGuZS/PDM=' 'sha256-qLKokSEZVlXvRo73mXVcIWftxGTRKfLIeFjHU3Xq7qU='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Andromeda</title>
 <link rel="stylesheet" href="styles.css">
@@ -29,6 +29,7 @@
     <section class="view" id="view-courses" data-view="courses" role="tabpanel" aria-label="Courses"></section>
     <section class="view" id="view-course" data-view="course" aria-label="Course" hidden></section>
     <section class="view" id="view-guides" data-view="guides" role="tabpanel" aria-label="Guides" hidden></section>
+    <section class="view" id="view-guide" data-view="guide" aria-label="Guide" hidden></section>
     <section class="view" id="view-settings" data-view="settings" role="tabpanel" aria-label="Settings" hidden></section>
   </main>
 
@@ -78,6 +79,7 @@
 <script src="galaxies.js"></script>
 <script src="sky.js"></script>
 <script src="data.js"></script>
+<script src="guide-page.js"></script>
 <script src="mock.js"></script>
 <script src="app.js"></script>
 </body>

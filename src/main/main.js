@@ -7,6 +7,7 @@ const { createToolServer } = require('./tools');
 const { extract } = require('./extract');
 const { ClaudeRunner } = require('./claude');
 const { GitHub } = require('./github');
+const { GuideStore, GuideBuilder, guessSubjects, SUBJECTS } = require('./guides');
 
 const isMac = process.platform === 'darwin';
 const isDev = !app.isPackaged || process.argv.includes('--dev');
@@ -214,7 +215,7 @@ ipcMain.on('menu:popup', (_e, pos) => {
 });
 
 // ---------- data, Claude and GitHub ----------
-let store, tools, runner, github;
+let store, tools, runner, github, guides, builder;
 const usageFile = () => path.join(app.getPath('userData'), 'usage.json');
 let usage = {};
 const toWin = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
@@ -233,6 +234,17 @@ async function setupServices() {
     getUsage: () => usage,
     setUsage: (u) => { usage = u; try { fs.writeFileSync(usageFile(), JSON.stringify(u)); } catch { /* fine */ } },
   });
+  // Guides build on their own Claude Code run, so the course chat stays free meanwhile.
+  guides = new GuideStore(store);
+  const guideRunner = new ClaudeRunner({
+    store, tools,
+    getUsage: () => usage,
+    setUsage: (u) => { usage = u; try { fs.writeFileSync(usageFile(), JSON.stringify(u)); } catch { /* fine */ } toWin('usage', u); },
+  });
+  builder = new GuideBuilder({ guides, store, runner: guideRunner, getUsage: () => usage, onCommit: () => backup() });
+  guides.on('changed', async () => toWin('guides:changed', await guides.list()));
+  builder.events.on('part', (p) => toWin('guide:part', p));
+  builder.events.on('claude', ({ id, piece, ev }) => { if (ev.type === 'step' && ev.step.state === 'running') toWin('guide:step', { id, piece, label: ev.step.label }); if (ev.type === 'usage') toWin('usage', ev.usage); });
   github = new GitHub(app.getPath('userData'), store);
   await github.load();
   // Connected before, but this data folder isn't linked yet (new folder, or a fresh start): link it.
@@ -241,15 +253,21 @@ async function setupServices() {
     if (!origin.ok) github.link().catch(() => {});
   }
   store.on('changed', async () => toWin('data:changed', { courses: await store.listCourses(), inbox: await store.inbox() }));
+  builder.pickUp().catch(() => {});
 }
 
 // Save to GitHub in the background after any change.
 const backup = () => { if (github && github.token) github.push().then((ok) => toWin('github:pushed', { ok })); };
+// Quiz scores and typed answers are saved straight away, and backed up once things go quiet.
+let progressTimer = null;
+const progressDirty = () => { clearTimeout(progressTimer); progressTimer = setTimeout(flushProgress, 45e3); };
+async function flushProgress() { clearTimeout(progressTimer); progressTimer = null; if (store && await store.commit('Quiz progress')) backup(); }
 
 const handlers = {
   'app:state': async () => ({
     courses: await store.listCourses(), inbox: await store.inbox(), usage,
     github: github.state(), claude: await runner.status(), dataDir: store.dir, version: app.getVersion(),
+    guides: await guides.list(), subjects: Object.fromEntries(Object.entries(SUBJECTS).map(([k, v]) => [k, v.name])),
   }),
   'claude:status': () => runner.status(),
   'claude:run': (_e, req) => {
@@ -306,6 +324,13 @@ const handlers = {
   'github:wait': async () => { await github.wait(); return github.link(); },
   'github:cancel': () => github.cancel(),
   'github:retryLink': () => github.link(),
+  'guides:get': (_e, id) => guides.get(id),
+  'guides:guess': (_e, name) => guessSubjects(name),
+  'guides:create': async (_e, plan) => { const g = await guides.create(plan); backup(); builder.build(g.id).catch(() => {}); return g; },
+  'guides:stop': (_e, id) => builder.stop(id),
+  'guides:resume': (_e, id) => { builder.resume(id).catch(() => {}); return true; },
+  'guides:delete': async (_e, id) => { await builder.stop(id).catch(() => {}); await guides.remove(id); backup(); return true; },
+  'guides:progress': async (_e, { id, k, v }) => { await guides.saveProgress(id, k, v); progressDirty(); return true; },
   'zoom:get': () => zoomInfo(),
   'zoom:set': (_e, mode) => setZoom(mode),
   'zoom:step': (_e, dir) => stepZoom(dir),
@@ -343,4 +368,5 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => { if (!isMac) app.quit(); });
+  app.on('before-quit', () => { if (progressTimer) flushProgress(); });
 }
