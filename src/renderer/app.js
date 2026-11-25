@@ -520,7 +520,7 @@
         <div class="pl-f"><span id="pl-test-l">For</span>${ddHtml('pl-test', [['', 'No particular test'], ...(c.upcoming || []).filter((x) => !x.done).map((x) => [x.id, x.title, x.date ? prettyDate(x.date) : 'Date not set'])], P.testId)}</div>
       </div>
       <div class="pl-f m"><span>Weeks</span><div class="pl-weeks">${weeks}</div></div>
-      <div class="pl-f m"><span>Kind of course</span><div class="seg pl-subj" role="group" aria-label="Kind of course">${Object.entries(S.subjects).map(([k, l]) => `<button type="button" data-subj="${k}" aria-pressed="${P.subjects.includes(k)}">${esc(l)}</button>`).join('')}</div><small class="pl-note">Guessed from the course name. Pick up to two.</small></div>
+      <div class="pl-f m"><span>Kind of course</span><div class="seg pl-subj" role="group" aria-label="Kind of course">${Object.entries(S.subjects).map(([k, l]) => `<button type="button" data-subj="${k}" aria-pressed="${P.subjects.includes(k)}">${esc(l)}</button>`).join('')}</div><small class="pl-note">${P.subjects.length ? 'Guessed from the course name. Pick up to two.' : 'None picked: Andromeda uses the best fit for this course.'}</small></div>
       <label class="pl-f m"><span>Exam format</span><input type="text" id="pl-exam" value="${esc(P.exam)}" placeholder="For example: 40 multiple choice and 2 short answer, 2 hours"><small class="pl-note">Optional. Practice questions follow it.</small></label>
       ${days != null && days >= 0 && days < 4 ? `<label class="pl-check m"><input type="checkbox" id="pl-short" ${P.shortOnTime ? 'checked' : ''}> <span>Short on time: ${esc(test.title)} is ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}. Tighter notes, most likely topics first.</span></label>` : ''}
       <div class="pl-grid m">
@@ -528,7 +528,7 @@
         <div class="pl-f"><span id="pl-effort-l">Effort</span>${ddHtml('pl-effort', EFFORT.map(([v, l]) => [v, l]), P.effort)}</div>
       </div>
       ${warn}
-      <div class="pl-foot m"><span class="muted">${nWeeks ? `Builds ${nWeeks} week${nWeeks === 1 ? '' : 's'}${nWeeks > 1 ? ', a final quiz' : ''} and an opening, one at a time. You can read each week as soon as it's done.` : 'Pick at least one week with files.'}</span><button type="button" class="btn" id="pl-start" ${nWeeks && P.subjects.length && !P.busy ? '' : 'disabled'}>Build guide</button></div>
+      <div class="pl-foot m"><span class="muted">${nWeeks ? `Builds ${nWeeks} week${nWeeks === 1 ? '' : 's'}${nWeeks > 1 ? ', a final quiz' : ''} and an opening, one at a time. You can read each week as soon as it's done.` : 'Pick at least one week with files.'}</span><button type="button" class="btn" id="pl-start" ${nWeeks && !P.busy ? '' : 'disabled'}>Build guide</button></div>
     </section>`;
   }
   function wirePlan() {

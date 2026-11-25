@@ -81,15 +81,20 @@ function condense(html) {
 }
 
 // What a course name most likely is, for the subject skill. The user confirms it on the plan screen.
-function guessSubjects(name) {
-  const n = String(name).toLowerCase();
-  if (/tax/.test(n)) return ['procedural', 'rules'];
-  if (/audit|law|legal|ethic|assurance|governance/.test(n)) return ['rules'];
-  if (/account|financ|statistic|quantitative|math|econom|cost|budget|controllership|business systems/.test(n)) return ['procedural'];
-  if (/biolog|anatom|physiolog|chemi|physics|neuro|health sci/.test(n)) return ['sciences'];
-  if (/relig|philos|histor|magic|witch|literat|theolog|classics/.test(n)) return ['humanities'];
-  if (/psych|sociol|anthrop|social|behaviou?r|deviance|child|develop/.test(n)) return ['social-sciences'];
-  return ['procedural'];
+// The best-fitting kind of course: from its name first, then (when the name gives no clue) from
+// what its weeks cover and their file names. Accounting-style "procedural" if nothing matches.
+function guessSubjects(name, more = '') {
+  const pick = (text) => {
+    const n = String(text).toLowerCase();
+    if (/tax/.test(n)) return ['procedural', 'rules'];
+    if (/audit|law|legal|ethic|assurance|governance/.test(n)) return ['rules'];
+    if (/account|financ|statistic|quantitative|math|econom|cost|budget|controllership|business systems/.test(n)) return ['procedural'];
+    if (/biolog|anatom|physiolog|chemi|physics|neuro|health sci/.test(n)) return ['sciences'];
+    if (/relig|philos|histor|magic|witch|literat|theolog|classics/.test(n)) return ['humanities'];
+    if (/psych|sociol|anthrop|social|behaviou?r|deviance|child|develop/.test(n)) return ['social-sciences'];
+    return null;
+  };
+  return pick(name) || pick(more) || ['procedural'];
 }
 
 class GuideStore extends EventEmitter {
@@ -152,8 +157,9 @@ class GuideStore extends EventEmitter {
     const weeks = (plan.weekIds || []).map((wid) => c.weeks.find((w) => w.id === wid)).filter(Boolean);
     if (!weeks.length) throw new Invalid('Pick at least one week.');
     if (!weeks.some((w) => w.files.length)) throw new Invalid('None of those weeks have files yet. Add slides to them first.');
-    const subjects = (plan.subjects || []).filter((s) => SUBJECTS[s]).slice(0, 2);
-    if (!subjects.length) throw new Invalid('Pick the kind of course.');
+    let subjects = (plan.subjects || []).filter((s) => SUBJECTS[s]).slice(0, 2);
+    // Nothing picked: use the best fit for this course.
+    if (!subjects.length) subjects = guessSubjects(c.name, weeks.map((w) => [w.label, w.title, ...w.files].join(' ')).join(' '));
     const test = plan.testId ? c.upcoming.find((u) => u.id === plan.testId) : null;
     const title = test ? `${c.name}: ${test.title}` : `${c.name}: ${weeks.length === 1 ? weeks[0].label : `${weeks[0].label} to ${weeks[weeks.length - 1].label}`}`;
     const all = await this.list();
