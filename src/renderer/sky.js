@@ -324,7 +324,7 @@
 
   // ---------- the sky object ----------
   function createSky(canvas, opts) {
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d'); // see-through: the background and the Milky Way are layers behind it
     const reduce = opts.reduceMotion;
     // How much bright stars dim and brighten: 0 is still, 0.9 is the most the slider allows.
     const twinkleAmount = () => (opts.twinkle ? opts.twinkle() : 0.06);
@@ -341,7 +341,25 @@
     let mouse = [0, 0], mouseT = [0, 0];
     let alpha = 1, fade = null;
     let last = 0, dirty = true;
-    let still = null, stillKey = '';
+    let still = null, stillKey = '', stillReady = false;
+    // The background (the sky's gradient and light pollution) never moves, so it lives on its own
+    // canvas behind this one: the screen shows it without it being copied every frame.
+    const baseEl = document.createElement('canvas');
+    baseEl.setAttribute('aria-hidden', 'true');
+    baseEl.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none';
+    canvas.parentNode.insertBefore(baseEl, canvas);
+    let baseD = -1;
+    // The Milky Way is its own layer too, between the background and the stars. Panning just slides
+    // it (the graphics chip does that for free) instead of stretching it over the whole screen
+    // every frame, which was the heaviest part of a pan on a Retina screen.
+    const bandBox = document.createElement('div');
+    bandBox.setAttribute('aria-hidden', 'true');
+    bandBox.style.cssText = 'position:fixed;inset:0;overflow:hidden;pointer-events:none';
+    const bandEl = band.canvas;
+    bandEl.style.cssText = `position:absolute;left:0;top:0;width:${band.canvas.width / band.scale}px;height:${band.canvas.height / band.scale}px;transform-origin:0 0;will-change:transform,opacity`;
+    bandBox.appendChild(bandEl);
+    canvas.parentNode.insertBefore(bandBox, canvas);
+    let bandPos = '';
 
     function camFor(id) {
       const k = CONSTELLATIONS[conOf(id)], c = k.center;
@@ -364,6 +382,8 @@
       canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
       base = document.createElement('canvas');
       base.width = canvas.width; base.height = canvas.height;
+      baseEl.width = canvas.width; baseEl.height = canvas.height;
+      baseD = -1;
       const b = base.getContext('2d');
       b.scale(dpr, dpr);
       const R = Math.max(W, H) * 1.25;
@@ -512,6 +532,9 @@
         if (rm || !twinkleAmount()) return;
         if (now - last < 33) return;
       }
+      // 120 Hz screens (like a MacBook Pro's) ask for twice as many frames; 60 a second is plenty
+      // for a pan, and halves the work.
+      if (moving && now - last < 14) return;
       last = now; dirty = false;
 
       // Mouse drift, smoothed.
@@ -540,39 +563,64 @@
         if (outA <= 0) lines.out = null;
       }
 
-      // The still part of the sky (background, Milky Way, faint stars) is painted once and reused
-      // until the camera, the mouse drift or the fade changes it.
       const cB = layerCam(0.88), cF = layerCam(0.92), d = darkness();
-      const key = [cB[0], cB[1], cF[0], cF[1], mouse[0], mouse[1], alpha, W, H, d].map((v) => Math.round(v * 1000)).join();
-      if (key !== stillKey || !still) {
-        stillKey = key;
-        if (!still || still.width !== canvas.width || still.height !== canvas.height) {
-          still = document.createElement('canvas'); still.width = canvas.width; still.height = canvas.height;
-        }
-        const g = still.getContext('2d');
+      // The background behind: repainted only when the window size or the darkness setting changes.
+      if (d !== baseD) {
+        baseD = d;
+        const g = baseEl.getContext('2d');
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.drawImage(base, 0, 0);
         g.setTransform(dpr, 0, 0, dpr, 0, 0);
         // Light pollution lifts the whole sky, most of all near the horizon.
         const k = Math.pow(1 - d, 1.5);
         if (k > 0.01) {
-          g.fillStyle = `rgba(44,42,54,${0.30 * k * alpha})`; g.fillRect(0, 0, W, H);
+          g.fillStyle = `rgba(44,42,54,${0.30 * k})`; g.fillRect(0, 0, W, H);
           const lg = g.createLinearGradient(0, H, 0, H * 0.3);
-          lg.addColorStop(0, `rgba(150,108,78,${0.26 * k * alpha})`); lg.addColorStop(1, 'rgba(150,108,78,0)');
+          lg.addColorStop(0, `rgba(150,108,78,${0.26 * k})`); lg.addColorStop(1, 'rgba(150,108,78,0)');
           g.fillStyle = lg; g.fillRect(0, H * 0.3, W, H * 0.7);
         }
+      }
+      // The slow part of the sky (Milky Way, galaxies, faint stars). While it's moving it's painted
+      // straight onto the screen; once it's still, it's painted once into a layer that's reused for
+      // the twinkle, so a resting sky stays cheap.
+      const key = [cB[0], cB[1], cF[0], cF[1], mouse[0], mouse[1], alpha, W, H, d].map((v) => Math.round(v * 1000)).join();
+      // Slide the Milky Way layer to where the camera is (the same cut-out the canvas used to draw).
+      {
         const bx = W / 2 - cB[0] + mouse[0] * 5, by = H / 2 - cB[1] + mouse[1] * 4;
-        g.globalAlpha = alpha * glowShare(d);
         const S = band.scale, T = band.turn;
         let sx = ((-bx - WORLD.x0) * S) % T;
         if (sx < 0) sx += T;
-        g.drawImage(band.canvas, sx, (-by - WORLD.y0) * S, W * S, H * S, 0, 0, W, H);
-        g.globalAlpha = 1;
+        const pos = `translate3d(${(-sx / S).toFixed(2)}px,${(-(-by - WORLD.y0)).toFixed(2)}px,0)|${(alpha * glowShare(d)).toFixed(3)}`;
+        if (pos !== bandPos) {
+          bandPos = pos;
+          const [tf, op] = pos.split('|');
+          bandEl.style.transform = tf; bandEl.style.opacity = op;
+        }
+      }
+      const paintStill = (g) => {
         drawGalaxies(g, cB, d);
         drawStars(g, stars.faint, cF, 0.55, now, 0, faintShare(d), 1);
-      }
+      };
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(still, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (key !== stillKey) {
+        stillKey = key; stillReady = false;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        paintStill(ctx);
+      } else {
+        if (!stillReady || !still || still.width !== canvas.width || still.height !== canvas.height) {
+          if (!still || still.width !== canvas.width || still.height !== canvas.height) {
+            still = document.createElement('canvas'); still.width = canvas.width; still.height = canvas.height;
+          }
+          const g = still.getContext('2d');
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.clearRect(0, 0, still.width, still.height);
+          g.setTransform(dpr, 0, 0, dpr, 0, 0);
+          paintStill(g);
+          stillReady = true;
+        }
+        ctx.drawImage(still, 0, 0);
+      }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const amt = rm ? 0 : twinkleAmount();
